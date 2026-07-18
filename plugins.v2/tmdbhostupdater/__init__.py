@@ -16,7 +16,7 @@ class TmdbHostUpdater(_PluginBase):
     plugin_name = "TMDB Host更新"
     plugin_desc = "定时从CheckTMDB获取最新TMDB hosts，自动更新系统hosts文件，解决TMDB无法访问问题。"
     plugin_icon = "hosts.png"
-    plugin_version = "1.0.1"
+    plugin_version = "1.0.2"
     plugin_author = "lovesakuratears"
     author_url = "https://github.com/cnwikee/CheckTMDB"
     plugin_config_prefix = "tmdbhostupdater_"
@@ -445,15 +445,32 @@ class TmdbHostUpdater(_PluginBase):
         return url
 
     def __fetch_hosts(self, url: str) -> Optional[str]:
-        try:
-            real_url = self.__build_url(url)
-            logger.info(f"获取TMDB hosts: {real_url}")
-            response = requests.get(real_url, timeout=30)
-            response.raise_for_status()
-            return response.text
-        except Exception as e:
-            logger.error(f"获取TMDB hosts失败: {str(e)}")
-            return None
+        real_url = self.__build_url(url)
+        urls_to_try = [real_url]
+
+        # 主 URL 失败时尝试 jsdelivr CDN 备用（仅当 URL 来自 raw.githubusercontent.com 且未配置镜像时）
+        if "raw.githubusercontent.com" in real_url and not self._github_mirror:
+            stripped = real_url.replace("https://raw.githubusercontent.com/", "")
+            parts = stripped.split("/", 3)
+            if len(parts) == 4:
+                user, repo, branch, path = parts
+                fallback = f"https://cdn.jsdelivr.net/gh/{user}/{repo}@{branch}/{path}"
+                if fallback not in urls_to_try:
+                    urls_to_try.append(fallback)
+
+        last_err = None
+        for try_url in urls_to_try:
+            try:
+                logger.info(f"获取TMDB hosts: {try_url}")
+                response = requests.get(try_url, timeout=15)
+                response.raise_for_status()
+                return response.text
+            except Exception as e:
+                last_err = e
+                logger.warning(f"获取TMDB hosts失败 [{try_url}]: {str(e)}")
+
+        logger.error(f"所有URL尝试均失败: {str(last_err)}")
+        return None
 
     def __parse_hosts(self, content: str) -> List[str]:
         hosts = []
