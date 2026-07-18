@@ -4,7 +4,6 @@ from apscheduler.triggers.interval import IntervalTrigger
 from apscheduler.triggers.date import DateTrigger
 import requests
 
-from python_hosts import Hosts, HostsEntry
 from app.core.event import eventmanager
 from app.log import logger
 from app.plugins import _PluginBase
@@ -17,7 +16,7 @@ class TmdbHostUpdater(_PluginBase):
     plugin_name = "TMDB Host更新"
     plugin_desc = "定时从CheckTMDB获取最新TMDB hosts，自动更新系统hosts文件，解决TMDB无法访问问题。"
     plugin_icon = "hosts.png"
-    plugin_version = "1.0.0"
+    plugin_version = "1.0.1"
     plugin_author = "lovesakuratears"
     author_url = "https://github.com/cnwikee/CheckTMDB"
     plugin_config_prefix = "tmdbhostupdater_"
@@ -466,74 +465,57 @@ class TmdbHostUpdater(_PluginBase):
             parts = line.split()
             if len(parts) >= 2:
                 ip = parts[0]
-                # 仅校验是否为合法IP（ipv4或ipv6），具体类型由HostsEntry自动判断
                 if IpUtils.is_ipv4(ip) or ":" in ip:
                     hosts.append(line)
         return hosts
 
-    def __read_system_hosts(self) -> Hosts:
+    def __get_hosts_path(self) -> str:
         if SystemUtils.is_windows():
-            hosts_path = r"c:\windows\system32\drivers\etc\hosts"
-        else:
-            hosts_path = '/etc/hosts'
-        return Hosts(path=hosts_path)
+            return r"c:\windows\system32\drivers\etc\hosts"
+        return '/etc/hosts'
 
     def __clear_system_hosts(self):
-        system_hosts = self.__read_system_hosts()
-        origin_entries = []
-        for entry in system_hosts.entries:
-            if entry.entry_type == "comment" and entry.comment == "# TmdbHostUpdaterPlugin":
-                break
-            origin_entries.append(entry)
-        system_hosts.entries = origin_entries
+        hosts_path = self.__get_hosts_path()
         try:
-            system_hosts.write()
+            with open(hosts_path, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+            new_lines = []
+            for line in lines:
+                if line.strip() == "# TmdbHostUpdaterPlugin":
+                    break
+                new_lines.append(line)
+            with open(hosts_path, 'w', encoding='utf-8') as f:
+                f.writelines(new_lines)
             logger.info("TMDB Hosts已从系统hosts中清除")
         except Exception as err:
             logger.error(f"清除系统hosts文件失败：{str(err) or '请检查权限'}")
-            self.systemmessage.put(f"清除TMDB Hosts失败：{str(err) or '请检查权限'}", title="TMDB Host更新")
 
     def __add_hosts_to_system(self, hosts: List[str]) -> bool:
-        system_hosts = self.__read_system_hosts()
-        origin_entries = []
-        for entry in system_hosts.entries:
-            if entry.entry_type == "comment" and entry.comment == "# TmdbHostUpdaterPlugin":
-                break
-            origin_entries.append(entry)
-        system_hosts.entries = origin_entries
-
-        new_entries = []
-        for host in hosts:
-            if not host:
-                continue
-            host = host.strip()
-            if host.startswith('#'):
-                host_entry = HostsEntry(entry_type='comment', comment=host)
-                new_entries.append(host_entry)
-                continue
-
-            host_arr = str(host).split()
-            try:
-                ip_type = 'ipv4' if IpUtils.is_ipv4(str(host_arr[0])) else 'ipv6'
-                host_entry = HostsEntry(entry_type=ip_type,
-                                        address=host_arr[0],
-                                        names=host_arr[1:])
-                new_entries.append(host_entry)
-            except Exception as err:
-                logger.error(f"[TMDB Host] 格式转换错误：{str(err)} - {host}")
-
-        if new_entries:
-            try:
-                system_hosts.add([HostsEntry(entry_type='comment', comment="# TmdbHostUpdaterPlugin")])
-                system_hosts.add(new_entries)
-                system_hosts.write()
-                logger.info(f"更新系统hosts文件成功，共{len(new_entries)}条记录")
-                return True
-            except Exception as err:
-                logger.error(f"更新系统hosts文件失败：{str(err) or '请检查权限'}")
-                self.systemmessage.put(f"更新系统hosts文件失败：{str(err) or '请检查权限'}", title="TMDB Host更新")
-                return False
-        return False
+        if not hosts:
+            return False
+        hosts_path = self.__get_hosts_path()
+        try:
+            with open(hosts_path, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+            new_lines = []
+            for line in lines:
+                if line.strip() == "# TmdbHostUpdaterPlugin":
+                    break
+                new_lines.append(line)
+            if new_lines and not new_lines[-1].endswith('\n'):
+                new_lines[-1] += '\n'
+            if new_lines and new_lines[-1].strip() != '':
+                new_lines.append('\n')
+            new_lines.append("# TmdbHostUpdaterPlugin\n")
+            for host in hosts:
+                new_lines.append(host + '\n')
+            with open(hosts_path, 'w', encoding='utf-8') as f:
+                f.writelines(new_lines)
+            logger.info(f"更新系统hosts文件成功，共{len(hosts)}条记录")
+            return True
+        except Exception as err:
+            logger.error(f"更新系统hosts文件失败：{str(err) or '请检查权限'}")
+            return False
 
     def __run_update(self):
         try:
