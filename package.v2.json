@@ -949,5 +949,18 @@
     "history": {
       "v1.0.0": "新增电影蓝光原盘转封装插件，支持 MPLS 播放列表解析、覆盖检查和安全回滚。"
     }
+  },
+  "TmdbHostUpdater": {
+    "name": "TMDB Host更新",
+    "description": "定时从CheckTMDB获取最新TMDB hosts，自动更新系统hosts文件，解决TMDB无法访问问题。",
+    "labels": "网络工具,TMDB,Hosts",
+    "version": "1.0.0",
+    "icon": "hosts.png",
+    "author": "lovesakuratears",
+    "author_url": "https://github.com/cnwikee/CheckTMDB",
+    "level": 1,
+    "history": {
+      "v1.0.0": "初始版本，定时从CheckTMDB获取TMDB hosts并自动更新系统hosts文件，支持IPv4/IPv6、GitHub镜像、手动更新"
+    }
   }
 }
