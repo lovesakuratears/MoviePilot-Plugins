@@ -16,7 +16,7 @@ class TmdbHostUpdater(_PluginBase):
     plugin_name = "TMDB Host更新"
     plugin_desc = "定时从CheckTMDB获取最新TMDB hosts，自动更新系统hosts文件，解决TMDB无法访问问题。"
     plugin_icon = "hosts.png"
-    plugin_version = "1.0.4"
+    plugin_version = "1.0.5"
     plugin_author = "lovesakuratears"
     author_url = "https://github.com/cnwikee/CheckTMDB"
     plugin_config_prefix = "tmdbhostupdater_"
@@ -33,6 +33,7 @@ class TmdbHostUpdater(_PluginBase):
     _last_update_time = ""
     _last_update_status = ""
     _current_hosts = ""
+    _manual_hosts = ""
 
     def init_plugin(self, config: dict = None):
         if config:
@@ -46,6 +47,7 @@ class TmdbHostUpdater(_PluginBase):
             self._last_update_time = config.get("last_update_time", "")
             self._last_update_status = config.get("last_update_status", "")
             self._current_hosts = config.get("current_hosts", "")
+            self._manual_hosts = config.get("manual_hosts", "")
 
         if not self._enabled and self._clear_on_stop and self._current_hosts:
             self.__clear_system_hosts()
@@ -78,6 +80,14 @@ class TmdbHostUpdater(_PluginBase):
                 "auth": "bear",
                 "summary": "立即更新TMDB Hosts",
                 "description": "手动触发一次TMDB hosts更新",
+            },
+            {
+                "path": "/save_manual",
+                "endpoint": self.__api_save_manual,
+                "methods": ["POST"],
+                "auth": "bear",
+                "summary": "保存手动编辑的Hosts",
+                "description": "验证并保存用户手动编辑的hosts内容到系统hosts文件",
             },
             {
                 "path": "/status",
@@ -278,6 +288,67 @@ class TmdbHostUpdater(_PluginBase):
                                 ]
                             }
                         ]
+                    },
+                    {
+                        'component': 'VRow',
+                        'content': [
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VTextarea',
+                                        'props': {
+                                            'model': 'manual_hosts',
+                                            'label': '手动编辑Hosts（每行一条：IP 域名，# 开头为注释）',
+                                            'rows': 10,
+                                            'auto-grow': True,
+                                            'placeholder': '示例：\n13.224.0.42 api.themoviedb.org\n# 自定义注释\n2600:9000:221c:5600:8:6c19:7443:9c21 api.themoviedb.org'
+                                        }
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        'component': 'VRow',
+                        'content': [
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12,
+                                    'class': 'text-right'
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VBtn',
+                                        'props': {
+                                            'color': 'success',
+                                            'variant': 'flat',
+                                        },
+                                        'events': {
+                                            'click': {
+                                                'api': 'plugin/TmdbHostUpdater/save_manual',
+                                                'method': 'post',
+                                                'params': {}
+                                            }
+                                        },
+                                        'content': [
+                                            {
+                                                'component': 'VIcon',
+                                                'props': {
+                                                    'start': True
+                                                },
+                                                'text': 'mdi-content-save'
+                                            },
+                                            '保存并应用到系统'
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
                     }
                 ]
             }
@@ -291,7 +362,8 @@ class TmdbHostUpdater(_PluginBase):
             "clear_on_stop": False,
             "last_update_time": "",
             "last_update_status": "",
-            "current_hosts": ""
+            "current_hosts": "",
+            "manual_hosts": ""
         }
 
     def get_page(self) -> List[dict]:
@@ -565,6 +637,7 @@ class TmdbHostUpdater(_PluginBase):
             if success:
                 self._last_update_status = "success"
                 self._current_hosts = '\n'.join(all_hosts)
+                self._manual_hosts = '\n'.join(all_hosts)
                 logger.info("TMDB Hosts更新完成")
             else:
                 self._last_update_status = "failed"
@@ -591,7 +664,8 @@ class TmdbHostUpdater(_PluginBase):
             "clear_on_stop": self._clear_on_stop,
             "last_update_time": self._last_update_time,
             "last_update_status": self._last_update_status,
-            "current_hosts": self._current_hosts
+            "current_hosts": self._current_hosts,
+            "manual_hosts": self._manual_hosts
         })
 
     def __api_update(self):
@@ -602,6 +676,60 @@ class TmdbHostUpdater(_PluginBase):
             return {"code": 0, "message": "更新成功", "data": {"status": self._last_update_status, "time": self._last_update_time}}
         else:
             return {"code": 1, "message": "更新失败", "data": {"status": self._last_update_status, "time": self._last_update_time}}
+
+    def __api_save_manual(self):
+        """保存用户手动编辑的hosts：验证格式后写入系统hosts文件"""
+        content = self._manual_hosts or ""
+        if not content.strip():
+            # 内容为空：清空系统 hosts 中插件管理的条目
+            self.__clear_system_hosts()
+            self._current_hosts = ""
+            self._last_update_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            self._last_update_status = "success"
+            self.__save_config()
+            return {"code": 0, "message": "已清空系统hosts中的插件条目"}
+
+        ok, msg, valid_lines = self.__validate_hosts(content)
+        if not ok:
+            return {"code": 1, "message": f"格式校验失败：{msg}"}
+
+        success = self.__add_hosts_to_system(valid_lines)
+        self._last_update_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        if success:
+            self._last_update_status = "success"
+            self._current_hosts = '\n'.join(valid_lines)
+            self.__save_config()
+            logger.info(f"手动Hosts已保存，共{len(valid_lines)}条")
+            return {"code": 0, "message": f"保存成功，已应用{len(valid_lines)}条hosts到系统"}
+        else:
+            self._last_update_status = "failed"
+            self.__save_config()
+            return {"code": 1, "message": "写入系统hosts失败，请检查权限"}
+
+    @staticmethod
+    def __validate_hosts(content: str) -> Tuple[bool, str, List[str]]:
+        """校验hosts格式：每行为空、# 注释、或 'IP 域名 [域名...]'"""
+        valid_lines = []
+        lines = content.split('\n')
+        for i, raw_line in enumerate(lines, 1):
+            line = raw_line.rstrip()
+            stripped = line.strip()
+            if not stripped:
+                continue
+            if stripped.startswith('#'):
+                valid_lines.append(stripped)
+                continue
+            parts = stripped.split()
+            if len(parts) < 2:
+                return False, f"第{i}行字段不足（应为：IP 域名）：{raw_line}", []
+            ip = parts[0]
+            if not (IpUtils.is_ipv4(ip) or ":" in ip):
+                return False, f"第{i}行IP格式错误：{ip}", []
+            for name in parts[1:]:
+                if not name or any(c in name for c in [' ', '\t']):
+                    return False, f"第{i}行域名格式错误：{name}", []
+            valid_lines.append(stripped)
+        return True, "", valid_lines
 
     def __api_status(self):
         return {
