@@ -16,7 +16,7 @@ class TmdbHostUpdater(_PluginBase):
     plugin_name = "TMDB Host更新"
     plugin_desc = "定时从CheckTMDB获取最新TMDB hosts，自动更新系统hosts文件，解决TMDB无法访问问题。"
     plugin_icon = "hosts.png"
-    plugin_version = "1.0.5"
+    plugin_version = "1.0.6"
     plugin_author = "lovesakuratears"
     author_url = "https://github.com/cnwikee/CheckTMDB"
     plugin_config_prefix = "tmdbhostupdater_"
@@ -27,7 +27,7 @@ class TmdbHostUpdater(_PluginBase):
     _interval = 6
     _ipv4_url = "https://raw.githubusercontent.com/cnwikee/CheckTMDB/main/Tmdb_host_ipv4"
     _ipv6_url = "https://raw.githubusercontent.com/cnwikee/CheckTMDB/main/Tmdb_host_ipv6"
-    _github_mirror = ""
+    _github_mirror = "https://gh-proxy.com/"
     _enable_ipv6 = False
     _clear_on_stop = False
     _last_update_time = ""
@@ -41,7 +41,7 @@ class TmdbHostUpdater(_PluginBase):
             self._interval = float(config.get("interval", 6))
             self._ipv4_url = config.get("ipv4_url", self._ipv4_url)
             self._ipv6_url = config.get("ipv6_url", self._ipv6_url)
-            self._github_mirror = config.get("github_mirror", "")
+            self._github_mirror = config.get("github_mirror", self._github_mirror) or "https://gh-proxy.com/"
             self._enable_ipv6 = config.get("enable_ipv6", False)
             self._clear_on_stop = config.get("clear_on_stop", False)
             self._last_update_time = config.get("last_update_time", "")
@@ -49,9 +49,15 @@ class TmdbHostUpdater(_PluginBase):
             self._current_hosts = config.get("current_hosts", "")
             self._manual_hosts = config.get("manual_hosts", "")
 
+        # 加载时从系统 hosts 读取完整内容，让手动编辑框显示真实 hosts 便于直观编辑
+        system_hosts_content = self.__read_system_hosts_text()
+        if system_hosts_content:
+            self._manual_hosts = system_hosts_content
+
         if not self._enabled and self._clear_on_stop and self._current_hosts:
             self.__clear_system_hosts()
             self._current_hosts = ""
+            self._manual_hosts = self.__read_system_hosts_text()
             self.__save_config()
 
     def get_state(self) -> bool:
@@ -256,27 +262,6 @@ class TmdbHostUpdater(_PluginBase):
                                 },
                                 'content': [
                                     {
-                                        'component': 'VTextField',
-                                        'props': {
-                                            'model': 'github_mirror',
-                                            'label': 'GitHub镜像地址',
-                                            'placeholder': '如：https://ghproxy.com/ （留空则不使用）'
-                                        }
-                                    }
-                                ]
-                            }
-                        ]
-                    },
-                    {
-                        'component': 'VRow',
-                        'content': [
-                            {
-                                'component': 'VCol',
-                                'props': {
-                                    'cols': 12,
-                                },
-                                'content': [
-                                    {
                                         'component': 'VAlert',
                                         'props': {
                                             'type': 'info',
@@ -299,13 +284,46 @@ class TmdbHostUpdater(_PluginBase):
                                 },
                                 'content': [
                                     {
+                                        'component': 'VAutocomplete',
+                                        'props': {
+                                            'model': 'github_mirror',
+                                            'label': 'GitHub加速镜像',
+                                            'placeholder': '选择或输入镜像地址（含末尾斜杠）',
+                                            'items': [
+                                                'https://gh-proxy.com/',
+                                                'https://ghproxy.net/',
+                                                'https://github.akams.cn/',
+                                                'https://hub.fastgit.xyz',
+                                                'https://kkgithub.com',
+                                                'https://hub.nuaa.cf',
+                                                'https://github.com.cnpmjs.org'
+                                            ],
+                                            'clearable': True,
+                                            'hint': '留空则不使用镜像，主URL失败时还会自动尝试 jsdelivr CDN',
+                                            'persistent-hint': True
+                                        }
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        'component': 'VRow',
+                        'content': [
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12
+                                },
+                                'content': [
+                                    {
                                         'component': 'VTextarea',
                                         'props': {
                                             'model': 'manual_hosts',
-                                            'label': '手动编辑Hosts（每行一条：IP 域名，# 开头为注释）',
-                                            'rows': 10,
+                                            'label': '手动编辑Hosts（完整 /etc/hosts 内容，每行一条：IP 域名，# 开头为注释）',
+                                            'rows': 15,
                                             'auto-grow': True,
-                                            'placeholder': '示例：\n13.224.0.42 api.themoviedb.org\n# 自定义注释\n2600:9000:221c:5600:8:6c19:7443:9c21 api.themoviedb.org'
+                                            'placeholder': '示例：\n127.0.0.1 localhost\n::1 localhost ip6-localhost ip6-loopback\n# TmdbHostUpdaterPlugin\n13.224.0.42 api.themoviedb.org'
                                         }
                                     }
                                 ]
@@ -327,6 +345,8 @@ class TmdbHostUpdater(_PluginBase):
                                         'props': {
                                             'color': 'success',
                                             'variant': 'flat',
+                                            'block': True,
+                                            'prependIcon': 'mdi-content-save'
                                         },
                                         'events': {
                                             'click': {
@@ -335,16 +355,7 @@ class TmdbHostUpdater(_PluginBase):
                                                 'params': {}
                                             }
                                         },
-                                        'content': [
-                                            {
-                                                'component': 'VIcon',
-                                                'props': {
-                                                    'start': True
-                                                },
-                                                'text': 'mdi-content-save'
-                                            },
-                                            '保存并应用到系统'
-                                        ]
+                                        'text': '保存并应用到系统'
                                     }
                                 ]
                             }
@@ -562,6 +573,16 @@ class TmdbHostUpdater(_PluginBase):
             return r"c:\windows\system32\drivers\etc\hosts"
         return '/etc/hosts'
 
+    def __read_system_hosts_text(self) -> str:
+        """读取系统hosts文件完整内容"""
+        hosts_path = self.__get_hosts_path()
+        try:
+            with open(hosts_path, 'r', encoding='utf-8') as f:
+                return f.read()
+        except Exception as e:
+            logger.warning(f"读取系统hosts失败：{str(e)}")
+            return ""
+
     def __clear_system_hosts(self):
         hosts_path = self.__get_hosts_path()
         try:
@@ -637,7 +658,8 @@ class TmdbHostUpdater(_PluginBase):
             if success:
                 self._last_update_status = "success"
                 self._current_hosts = '\n'.join(all_hosts)
-                self._manual_hosts = '\n'.join(all_hosts)
+                # 定时更新只修改了插件管理的部分，重新读取完整系统 hosts 同步到编辑框
+                self._manual_hosts = self.__read_system_hosts_text()
                 logger.info("TMDB Hosts更新完成")
             else:
                 self._last_update_status = "failed"
@@ -678,37 +700,48 @@ class TmdbHostUpdater(_PluginBase):
             return {"code": 1, "message": "更新失败", "data": {"status": self._last_update_status, "time": self._last_update_time}}
 
     def __api_save_manual(self):
-        """保存用户手动编辑的hosts：验证格式后写入系统hosts文件"""
+        """保存用户手动编辑的hosts：校验格式后整段覆盖写入系统hosts文件"""
         content = self._manual_hosts or ""
         if not content.strip():
-            # 内容为空：清空系统 hosts 中插件管理的条目
-            self.__clear_system_hosts()
-            self._current_hosts = ""
-            self._last_update_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            self._last_update_status = "success"
-            self.__save_config()
-            return {"code": 0, "message": "已清空系统hosts中的插件条目"}
+            return {"code": 1, "message": "内容为空，拒绝保存（清空hosts请使用停用清理选项）"}
 
         ok, msg, valid_lines = self.__validate_hosts(content)
         if not ok:
             return {"code": 1, "message": f"格式校验失败：{msg}"}
 
-        success = self.__add_hosts_to_system(valid_lines)
-        self._last_update_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        if success:
+        # 整段覆盖写入系统 hosts 文件
+        hosts_path = self.__get_hosts_path()
+        try:
+            with open(hosts_path, 'w', encoding='utf-8') as f:
+                f.write('\n'.join(valid_lines))
+                if not valid_lines or not valid_lines[-1].endswith('\n'):
+                    f.write('\n')
+            self._last_update_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             self._last_update_status = "success"
-            self._current_hosts = '\n'.join(valid_lines)
+            # current_hosts 记录插件相关的条目（标记行之后的内容）
+            plugin_section = []
+            in_section = False
+            for line in valid_lines:
+                if line.strip() == "# TmdbHostUpdaterPlugin":
+                    in_section = True
+                    continue
+                if in_section:
+                    plugin_section.append(line)
+            self._current_hosts = '\n'.join(plugin_section)
             self.__save_config()
-            logger.info(f"手动Hosts已保存，共{len(valid_lines)}条")
-            return {"code": 0, "message": f"保存成功，已应用{len(valid_lines)}条hosts到系统"}
-        else:
+            logger.info(f"手动Hosts已保存，共{len(valid_lines)}行")
+            return {"code": 0, "message": f"保存成功，已写入{len(valid_lines)}行到系统hosts"}
+        except Exception as err:
+            self._last_update_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             self._last_update_status = "failed"
             self.__save_config()
-            return {"code": 1, "message": "写入系统hosts失败，请检查权限"}
+            return {"code": 1, "message": f"写入系统hosts失败：{str(err) or '请检查权限'}"}
 
     @staticmethod
     def __validate_hosts(content: str) -> Tuple[bool, str, List[str]]:
-        """校验hosts格式：每行为空、# 注释、或 'IP 域名 [域名...]'"""
+        """校验hosts格式：每行为空、# 注释、或 'IP 域名 [域名...]'
+        允许 IPv4、IPv6（含 ::1 / fe00:: 等本地地址）作为IP
+        """
         valid_lines = []
         lines = content.split('\n')
         for i, raw_line in enumerate(lines, 1):
@@ -723,6 +756,7 @@ class TmdbHostUpdater(_PluginBase):
             if len(parts) < 2:
                 return False, f"第{i}行字段不足（应为：IP 域名）：{raw_line}", []
             ip = parts[0]
+            # IPv4 校验或 IPv6 校验（含冒号即为 IPv6，覆盖 ::1 / fe00:: 等格式）
             if not (IpUtils.is_ipv4(ip) or ":" in ip):
                 return False, f"第{i}行IP格式错误：{ip}", []
             for name in parts[1:]:
