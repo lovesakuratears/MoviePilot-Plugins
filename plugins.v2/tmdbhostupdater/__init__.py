@@ -16,7 +16,7 @@ class TmdbHostUpdater(_PluginBase):
     plugin_name = "TMDB Host更新"
     plugin_desc = "定时从CheckTMDB获取最新TMDB hosts，自动更新系统hosts文件，解决TMDB无法访问问题。"
     plugin_icon = "hosts.png"
-    plugin_version = "1.0.3"
+    plugin_version = "1.0.4"
     plugin_author = "lovesakuratears"
     author_url = "https://github.com/cnwikee/CheckTMDB"
     plugin_config_prefix = "tmdbhostupdater_"
@@ -304,6 +304,8 @@ class TmdbHostUpdater(_PluginBase):
             status_text = f"更新失败 - {self._last_update_time}"
             status_type = "error"
 
+        hosts_text = self._current_hosts or "暂无数据，请点击右上角\"立即更新\"按钮获取"
+
         return [
             {
                 'component': 'VCard',
@@ -392,13 +394,12 @@ class TmdbHostUpdater(_PluginBase):
                         'component': 'VCardText',
                         'content': [
                             {
-                                'component': 'VTextarea',
+                                'component': 'pre',
                                 'props': {
-                                    'model': 'current_hosts',
-                                    'readonly': True,
-                                    'rows': 20,
-                                    'auto-grow': True
-                                }
+                                    'class': 'text-body-2 pa-2',
+                                    'style': 'white-space: pre-wrap; word-break: break-all; max-height: 480px; overflow-y: auto;'
+                                },
+                                'text': hosts_text
                             }
                         ]
                     }

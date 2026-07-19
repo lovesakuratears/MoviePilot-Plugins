@@ -954,7 +954,7 @@
     "name": "TMDB Host更新",
     "description": "定时从CheckTMDB获取最新TMDB hosts，自动更新系统hosts文件，解决TMDB无法访问问题。",
     "labels": "网络工具,TMDB,Hosts",
-    "version": "1.0.3",
+    "version": "1.0.4",
     "icon": "hosts.png",
     "author": "lovesakuratears",
     "author_url": "https://github.com/cnwikee/CheckTMDB",
@@ -963,7 +963,8 @@
       "v1.0.0": "初始版本，定时从CheckTMDB获取TMDB hosts并自动更新系统hosts文件，支持IPv4/IPv6、GitHub镜像、手动更新",
       "v1.0.1": "移除 python_hosts 外部依赖，改用标准库操作 hosts 文件，修复插件加载失败问题",
       "v1.0.2": "raw.githubusercontent.com 超时时自动切换 jsdelivr CDN 备用源，提升国内可用性",
-      "v1.0.3": "修复当前生效Hosts页面不显示的问题，model绑定到current_hosts配置字段"
+      "v1.0.3": "修复当前生效Hosts页面不显示的问题，model绑定到current_hosts配置字段",
+      "v1.0.4": "修复当前生效Hosts页面不显示的问题，改用 pre 标签直接渲染内容"
     }
   }
 }
