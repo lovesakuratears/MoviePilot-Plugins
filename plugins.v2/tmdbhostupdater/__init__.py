@@ -16,7 +16,7 @@ class TmdbHostUpdater(_PluginBase):
     plugin_name = "TMDB Host更新"
     plugin_desc = "定时从CheckTMDB获取最新TMDB hosts，自动更新系统hosts文件，解决TMDB无法访问问题。"
     plugin_icon = "hosts.png"
-    plugin_version = "1.0.6"
+    plugin_version = "1.0.7"
     plugin_author = "lovesakuratears"
     author_url = "https://github.com/cnwikee/CheckTMDB"
     plugin_config_prefix = "tmdbhostupdater_"
@@ -51,8 +51,10 @@ class TmdbHostUpdater(_PluginBase):
 
         # 加载时从系统 hosts 读取完整内容，让手动编辑框显示真实 hosts 便于直观编辑
         system_hosts_content = self.__read_system_hosts_text()
-        if system_hosts_content:
+        if system_hosts_content and system_hosts_content != self._manual_hosts:
             self._manual_hosts = system_hosts_content
+            # 持久化到配置，确保表单能显示当前系统 hosts 内容
+            self.__save_config()
 
         if not self._enabled and self._clear_on_stop and self._current_hosts:
             self.__clear_system_hosts()
@@ -132,6 +134,28 @@ class TmdbHostUpdater(_PluginBase):
             {
                 'component': 'VForm',
                 'content': [
+                    {
+                        'component': 'VRow',
+                        'content': [
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VAlert',
+                                        'props': {
+                                            'type': 'info',
+                                            'variant': 'tonal',
+                                            'text': '数据来源：CheckTMDB项目 (https://github.com/cnwikee/CheckTMDB)。'
+                                                    '容器运行则更新容器内hosts，非宿主机！'
+                                        }
+                                    }
+                                ]
+                            }
+                        ]
+                    },
                     {
                         'component': 'VRow',
                         'content': [
@@ -246,28 +270,6 @@ class TmdbHostUpdater(_PluginBase):
                                             'model': 'ipv6_url',
                                             'label': 'IPv6 Hosts地址',
                                             'placeholder': 'IPv6 hosts文件URL'
-                                        }
-                                    }
-                                ]
-                            }
-                        ]
-                    },
-                    {
-                        'component': 'VRow',
-                        'content': [
-                            {
-                                'component': 'VCol',
-                                'props': {
-                                    'cols': 12
-                                },
-                                'content': [
-                                    {
-                                        'component': 'VAlert',
-                                        'props': {
-                                            'type': 'info',
-                                            'variant': 'tonal',
-                                            'text': '数据来源：CheckTMDB项目 (https://github.com/cnwikee/CheckTMDB)。'
-                                                    '容器运行则更新容器内hosts，非宿主机！'
                                         }
                                     }
                                 ]

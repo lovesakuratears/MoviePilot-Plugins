@@ -954,7 +954,7 @@
     "name": "TMDB Host更新",
     "description": "定时从CheckTMDB获取最新TMDB hosts，自动更新系统hosts文件，解决TMDB无法访问问题。",
     "labels": "网络工具,TMDB,Hosts",
-    "version": "1.0.6",
+    "version": "1.0.7",
     "icon": "hosts.png",
     "author": "lovesakuratears",
     "author_url": "https://github.com/cnwikee/CheckTMDB",
@@ -966,7 +966,8 @@
       "v1.0.3": "修复当前生效Hosts页面不显示的问题，model绑定到current_hosts配置字段",
       "v1.0.4": "修复当前生效Hosts页面不显示的问题，改用 pre 标签直接渲染内容",
       "v1.0.5": "支持在配置页面手动编辑hosts并保存，保存时校验IP/域名格式",
-      "v1.0.6": "手动编辑框显示完整/etc/hosts内容；GitHub镜像改为下拉选择+手动输入；默认镜像https://gh-proxy.com/；修复保存按钮文字显示问题"
+      "v1.0.6": "手动编辑框显示完整/etc/hosts内容；GitHub镜像改为下拉选择+手动输入；默认镜像https://gh-proxy.com/；修复保存按钮文字显示问题",
+      "v1.0.7": "修复手动编辑host文本框空白问题（持久化系统hosts到配置）；VAlert信息提示移到表单最顶部"
     }
   }
 }
