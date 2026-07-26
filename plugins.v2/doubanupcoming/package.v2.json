@@ -1,0 +1,18 @@
+{
+  "DoubanUpcoming": {
+    "name": "刷豆瓣助手",
+    "description": "省去打开豆瓣的过程，提供一条龙订阅推送服务。定时获取豆瓣即将播出/热门影视榜单，支持通过豆瓣UID获取想看列表并自动订阅未上映条目。",
+    "labels": "豆瓣,RSS,订阅,想看",
+    "version": "1.2.0",
+    "icon": "douban.png",
+    "author": "lovesakuratears",
+    "author_url": "https://github.com/lovesakuratears/MoviePilot-Plugins",
+    "system_version": ">=2.0.0",
+    "level": 1,
+    "history": {
+      "v1.2.0": "新增开播前24小时提醒、播放平台搜索（Bing）、豆瓣页面抓取补充海报/评分/集数/日期、豆瓣订阅（MoviePilot API）、通知搜预告按钮（跳转抖音）、清除历史记录改为开关",
+      "v1.1.0": "插件重命名为刷豆瓣助手；新增豆瓣UID和豆瓣想看功能，支持自动获取用户想看列表并订阅未上映条目；榜单数据源精简为即将上映和实时热门",
+      "v1.0.0": "初始版本，支持RSSHub数据获取、富媒体通知推送、TMDB/豆瓣订阅、本地追踪"
+    }
+  }
+}
