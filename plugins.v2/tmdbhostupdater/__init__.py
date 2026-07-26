@@ -21,7 +21,7 @@ class TmdbHostUpdater(_PluginBase):
     plugin_name = "TMDB Host更新"
     plugin_desc = "定时从CheckTMDB获取最新TMDB hosts，自动更新系统hosts文件，解决TMDB无法访问问题。"
     plugin_icon = "hosts.png"
-    plugin_version = "1.0.10"
+    plugin_version = "1.0.11"
     plugin_author = "lovesakuratears"
     author_url = "https://github.com/cnwikee/CheckTMDB"
     plugin_config_prefix = "tmdbhostupdater_"
@@ -63,6 +63,7 @@ class TmdbHostUpdater(_PluginBase):
     _ping_results = "[]"
     _health_retry_count = 0
     _health_failing = False
+    _last_notify_title = ""
 
     def init_plugin(self, config: dict = None):
         if config:
@@ -86,6 +87,7 @@ class TmdbHostUpdater(_PluginBase):
             self._ping_results = config.get("ping_results", "[]")
             self._health_retry_count = int(config.get("health_retry_count", 0))
             self._health_failing = config.get("health_failing", False)
+            self._last_notify_title = config.get("last_notify_title", "")
 
         # 加载时从系统 hosts 读取完整内容，让手动编辑框显示真实 hosts 便于直观编辑
         system_hosts_content = self.__read_system_hosts_text()
@@ -1026,6 +1028,7 @@ class TmdbHostUpdater(_PluginBase):
             "ping_retry_interval": self._ping_retry_interval,
             "health_retry_count": self._health_retry_count,
             "health_failing": self._health_failing,
+            "last_notify_title": self._last_notify_title,
             "last_update_time": self._last_update_time,
             "last_update_status": self._last_update_status,
             "current_hosts": self._current_hosts,
@@ -1165,11 +1168,15 @@ class TmdbHostUpdater(_PluginBase):
         return results
 
     def __notify(self, title: str, text: str):
-        """发送通知"""
+        """发送通知（同标题只发一次，避免重复骚扰）"""
         if not self._notify_on_error:
+            return
+        if title == self._last_notify_title:
+            logger.info(f"通知已发送过，跳过重复通知: {title}")
             return
         try:
             self.post_message(mtype=NotificationType.Plugin, title=title, text=text)
+            self._last_notify_title = title
             logger.info(f"已发送通知: {title}")
         except Exception as e:
             logger.warning(f"发送通知失败: {str(e)}")
