@@ -1,5 +1,6 @@
 import json
 import re
+import socket
 import subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Tuple, Dict, Any, Optional
@@ -20,7 +21,7 @@ class TmdbHostUpdater(_PluginBase):
     plugin_name = "TMDB Host更新"
     plugin_desc = "定时从CheckTMDB获取最新TMDB hosts，自动更新系统hosts文件，解决TMDB无法访问问题。"
     plugin_icon = "hosts.png"
-    plugin_version = "1.0.9"
+    plugin_version = "1.0.10"
     plugin_author = "lovesakuratears"
     author_url = "https://github.com/cnwikee/CheckTMDB"
     plugin_config_prefix = "tmdbhostupdater_"
@@ -573,65 +574,44 @@ class TmdbHostUpdater(_PluginBase):
         except Exception:
             ping_results = []
 
-        # 构建 ping 结果行
-        ping_rows = []
+        # 构建 ping 结果行（紧凑表格）
+        tmdb_ping_rows = []
+        gh_ping_rows = []
         for r in ping_results:
             host = r.get("host", "")
             success = r.get("success", False)
             latency = r.get("latency_ms", 0)
             icon = "mdi-check-circle"
             color = "success"
-            latency_text = f"{latency:.0f} ms" if success else "不通"
+            latency_text = f"{latency:.0f}ms" if success else "不通"
             if not success:
                 icon = "mdi-close-circle"
                 color = "error"
-            ping_rows.append({
-                'component': 'VRow',
-                'props': {'align': 'center', 'class': 'py-1'},
+            row = {
+                'component': 'tr',
                 'content': [
-                    {
-                        'component': 'VCol',
-                        'props': {'cols': 1, 'class': 'pa-0'},
-                        'content': [{
-                            'component': 'VIcon',
-                            'props': {'color': color, 'size': 'small'},
-                            'text': icon
-                        }]
-                    },
-                    {
-                        'component': 'VCol',
-                        'props': {'cols': 5, 'class': 'text-body-2'},
-                        'text': host
-                    },
-                    {
-                        'component': 'VCol',
-                        'props': {'cols': 3, 'class': 'text-body-2'},
-                        'text': latency_text
-                    },
-                    {
-                        'component': 'VCol',
-                        'props': {'cols': 3, 'class': 'text-right pa-0'},
-                        'content': [{
-                            'component': 'VBtn',
-                            'props': {'icon': 'mdi-refresh', 'size': 'x-small', 'variant': 'text'},
-                            'events': {
-                                'click': {
-                                    'api': 'plugin/TmdbHostUpdater/ping_single',
-                                    'method': 'post',
-                                    'params': {'host': host}
-                                }
-                            }
-                        }]
-                    }
+                    {'component': 'td', 'props': {'class': 'py-1 pr-1', 'style': 'width: 24px'},
+                     'content': [{'component': 'VIcon', 'props': {'color': color, 'size': 'x-small'}, 'text': icon}]},
+                    {'component': 'td', 'props': {'class': 'py-1 text-body-2'}, 'text': host},
+                    {'component': 'td', 'props': {'class': 'py-1 text-body-2 text-right', 'style': 'width: 60px'},
+                     'text': latency_text},
+                    {'component': 'td', 'props': {'class': 'py-1 pl-2', 'style': 'width: 32px'},
+                     'content': [{'component': 'VBtn', 'props': {'icon': 'mdi-refresh', 'size': 'x-small', 'variant': 'text', 'density': 'compact'},
+                                  'events': {'click': {'api': 'plugin/TmdbHostUpdater/ping_single', 'method': 'post', 'params': {'host': host}}}}]},
                 ]
-            })
+            }
+            if host in self.TMDB_DOMAINS:
+                tmdb_ping_rows.append(row)
+            else:
+                gh_ping_rows.append(row)
 
         page_content = [
             {
                 'component': 'VCard',
-                'props': {'variant': 'tonal', 'class': 'mb-4'},
+                'props': {'variant': 'tonal', 'class': 'mb-3'},
                 'content': [{
                     'component': 'VCardText',
+                    'props': {'class': 'pa-3'},
                     'content': [{
                         'component': 'VRow',
                         'props': {'align': 'center'},
@@ -672,52 +652,48 @@ class TmdbHostUpdater(_PluginBase):
                 'component': 'VCard',
                 'props': {'variant': 'tonal', 'class': 'mb-4'},
                 'content': [
-                    {'component': 'VCardTitle', 'text': '域名连通性检测'},
+                    {'component': 'VCardTitle', 'props': {'class': 'py-2'}, 'text': '域名连通性检测'},
                     {
                         'component': 'VCardText',
+                        'props': {'class': 'pa-2'},
                         'content': [
                             {
-                                'component': 'VRow',
-                                'props': {'class': 'mb-2'},
+                                'component': 'div',
+                                'props': {'class': 'text-right mb-2'},
                                 'content': [{
-                                    'component': 'VCol',
-                                    'props': {'cols': 12, 'class': 'text-right'},
-                                    'content': [{
-                                        'component': 'VBtn',
-                                        'props': {'color': 'primary', 'variant': 'tonal', 'size': 'small', 'prependIcon': 'mdi-refresh'},
-                                        'events': {
-                                            'click': {
-                                                'api': 'plugin/TmdbHostUpdater/ping',
-                                                'method': 'post',
-                                                'params': {}
-                                            }
-                                        },
-                                        'text': 'Ping检测'
-                                    }]
+                                    'component': 'VBtn',
+                                    'props': {'color': 'primary', 'variant': 'tonal', 'size': 'x-small', 'prependIcon': 'mdi-refresh'},
+                                    'events': {
+                                        'click': {
+                                            'api': 'plugin/TmdbHostUpdater/ping',
+                                            'method': 'post',
+                                            'params': {}
+                                        }
+                                    },
+                                    'text': '重新检测'
                                 }]
                             },
-                            # TMDB 分组
                             {
-                                'component': 'VRow',
-                                'props': {'class': 'mb-1'},
-                                'content': [{
-                                    'component': 'VCol',
-                                    'props': {'cols': 12},
-                                    'text': 'TMDB 域名'
-                                }]
-                            }
-                        ] + [r for r in ping_rows if r.get('content', [{}])[1].get('text', '') in self.TMDB_DOMAINS] + [
-                            # GitHub 分组
+                                'component': 'div',
+                                'props': {'class': 'text-caption font-weight-bold mb-1'},
+                                'text': 'TMDB 域名'
+                            },
                             {
-                                'component': 'VRow',
-                                'props': {'class': 'mb-1 mt-2'},
-                                'content': [{
-                                    'component': 'VCol',
-                                    'props': {'cols': 12},
-                                    'text': 'GitHub 域名'
-                                }]
+                                'component': 'VSimpleTable',
+                                'props': {'density': 'compact'},
+                                'content': tmdb_ping_rows
+                            },
+                            {
+                                'component': 'div',
+                                'props': {'class': 'text-caption font-weight-bold mb-1 mt-3'},
+                                'text': 'GitHub 域名'
+                            },
+                            {
+                                'component': 'VSimpleTable',
+                                'props': {'density': 'compact'},
+                                'content': gh_ping_rows
                             }
-                        ] + [r for r in ping_rows if r.get('content', [{}])[1].get('text', '') in self.GITHUB_DOMAINS]
+                        ]
                     }
                 ]
             },
@@ -725,9 +701,10 @@ class TmdbHostUpdater(_PluginBase):
                 'component': 'VCard',
                 'props': {'variant': 'tonal'},
                 'content': [
-                    {'component': 'VCardTitle', 'text': '当前生效的Hosts'},
+                    {'component': 'VCardTitle', 'props': {'class': 'py-2'}, 'text': '当前生效的Hosts'},
                     {
                         'component': 'VCardText',
+                        'props': {'class': 'pa-2'},
                         'content': [{
                             'component': 'pre',
                             'props': {
@@ -1144,30 +1121,35 @@ class TmdbHostUpdater(_PluginBase):
             }
         }
 
-    def __ping_host(self, host: str) -> Dict[str, Any]:
-        """Ping单个域名，返回 {host, success, latency_ms, error}"""
+    def __ping_host(self, host: str, port: int = 443) -> Dict[str, Any]:
+        """Ping单个域名（ICMP优先，容器内失败则TCP端口探测），返回 {host, success, latency_ms, error}"""
+        # 1. 尝试 ICMP ping
         try:
             if SystemUtils.is_windows():
                 cmd = ["ping", "-n", "1", "-w", "2000", host]
             else:
                 cmd = ["ping", "-c", "1", "-W", "2", host]
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+            result = subprocess.run(cmd, capture_output=True, universal_newlines=True, timeout=5)
             output = result.stdout + result.stderr
             if result.returncode == 0:
-                # 提取延迟时间，支持中英文输出
-                # Linux: "time=795 ms"  Windows: "时间=795ms" or "time<1ms"
                 match = re.search(r'time[=<]\s*(\d+\.?\d*)\s*ms', output, re.IGNORECASE)
-                if match:
-                    latency = float(match.group(1))
-                else:
-                    latency = 0.0
+                latency = float(match.group(1)) if match else 0.0
                 return {"host": host, "success": True, "latency_ms": latency, "error": ""}
-            else:
-                return {"host": host, "success": False, "latency_ms": 0, "error": "ping不通"}
-        except subprocess.TimeoutExpired:
-            return {"host": host, "success": False, "latency_ms": 0, "error": "超时"}
+        except Exception:
+            pass  # ICMP ping 失败，回退到 TCP 探测
+
+        # 2. ICMP 不可用，回退到 TCP 端口探测
+        try:
+            import time
+            start = time.time()
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(3)
+            sock.connect((host, port))
+            latency = (time.time() - start) * 1000
+            sock.close()
+            return {"host": host, "success": True, "latency_ms": latency, "error": ""}
         except Exception as e:
-            return {"host": host, "success": False, "latency_ms": 0, "error": str(e)}
+            return {"host": host, "success": False, "latency_ms": 0, "error": f"TCP不通: {str(e)}"}
 
     def __ping_all(self) -> List[Dict[str, Any]]:
         """多线程Ping所有TMDB和GitHub域名"""
