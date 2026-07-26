@@ -1,0 +1,16 @@
+{
+  "TmdbHostUpdater": {
+    "name": "TMDB Host更新",
+    "description": "定时从CheckTMDB获取最新TMDB hosts，自动更新系统hosts文件，解决TMDB无法访问问题。",
+    "labels": "网络工具",
+    "version": "1.0.0",
+    "icon": "hosts.png",
+    "author": "lovesakuratears",
+    "author_url": "https://github.com/lovesakuratears/MoviePilot-Plugins",
+    "system_version": ">=2.0.0",
+    "level": 1,
+    "history": {
+      "v1.0.0": "初始版本，支持定时获取TMDB hosts并更新系统hosts文件"
+    }
+  }
+}
