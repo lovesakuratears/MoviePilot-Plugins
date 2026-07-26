@@ -20,7 +20,7 @@ class TmdbHostUpdater(_PluginBase):
     plugin_name = "TMDB Host更新"
     plugin_desc = "定时从CheckTMDB获取最新TMDB hosts，自动更新系统hosts文件，解决TMDB无法访问问题。"
     plugin_icon = "hosts.png"
-    plugin_version = "1.0.8"
+    plugin_version = "1.0.9"
     plugin_author = "lovesakuratears"
     author_url = "https://github.com/cnwikee/CheckTMDB"
     plugin_config_prefix = "tmdbhostupdater_"
@@ -51,12 +51,17 @@ class TmdbHostUpdater(_PluginBase):
     _clear_on_stop = False
     _notify_on_error = True
     _auto_switch_mirror = True
+    _health_check_interval = 5
+    _ping_retry_count = 3
+    _ping_retry_interval = 5
     _last_update_time = ""
     _last_update_status = ""
     _current_hosts = ""
     _manual_hosts = ""
     _mirror_index = 0
     _ping_results = "[]"
+    _health_retry_count = 0
+    _health_failing = False
 
     def init_plugin(self, config: dict = None):
         if config:
@@ -69,12 +74,17 @@ class TmdbHostUpdater(_PluginBase):
             self._clear_on_stop = config.get("clear_on_stop", False)
             self._notify_on_error = config.get("notify_on_error", True)
             self._auto_switch_mirror = config.get("auto_switch_mirror", True)
+            self._health_check_interval = float(config.get("health_check_interval", 5))
+            self._ping_retry_count = int(config.get("ping_retry_count", 3))
+            self._ping_retry_interval = float(config.get("ping_retry_interval", 5))
             self._last_update_time = config.get("last_update_time", "")
             self._last_update_status = config.get("last_update_status", "")
             self._current_hosts = config.get("current_hosts", "")
             self._manual_hosts = config.get("manual_hosts", "")
             self._mirror_index = int(config.get("mirror_index", 0))
             self._ping_results = config.get("ping_results", "[]")
+            self._health_retry_count = int(config.get("health_retry_count", 0))
+            self._health_failing = config.get("health_failing", False)
 
         # 加载时从系统 hosts 读取完整内容，让手动编辑框显示真实 hosts 便于直观编辑
         system_hosts_content = self.__read_system_hosts_text()
@@ -167,6 +177,13 @@ class TmdbHostUpdater(_PluginBase):
                 "name": "TMDB Host定时更新",
                 "trigger": IntervalTrigger(hours=self._interval),
                 "func": self.__run_update,
+                "kwargs": {},
+            },
+            {
+                "id": f"{self.__class__.__name__}.HealthCheck",
+                "name": "TMDB域名健康检查",
+                "trigger": IntervalTrigger(minutes=self._health_check_interval),
+                "func": self.__health_check,
                 "kwargs": {},
             }
         ]
@@ -328,6 +345,71 @@ class TmdbHostUpdater(_PluginBase):
                             {
                                 'component': 'VCol',
                                 'props': {
+                                    'cols': 12,
+                                    'md': 4
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VTextField',
+                                        'props': {
+                                            'model': 'health_check_interval',
+                                            'label': '健康检查间隔（分钟）',
+                                            'type': 'number',
+                                            'min': 1,
+                                            'step': 1,
+                                            'placeholder': '默认5分钟'
+                                        }
+                                    }
+                                ]
+                            },
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12,
+                                    'md': 4
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VTextField',
+                                        'props': {
+                                            'model': 'ping_retry_interval',
+                                            'label': '重试间隔（分钟）',
+                                            'type': 'number',
+                                            'min': 1,
+                                            'step': 1,
+                                            'placeholder': '默认5分钟'
+                                        }
+                                    }
+                                ]
+                            },
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12,
+                                    'md': 4
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VTextField',
+                                        'props': {
+                                            'model': 'ping_retry_count',
+                                            'label': 'Ping重试次数',
+                                            'type': 'number',
+                                            'min': 1,
+                                            'step': 1,
+                                            'placeholder': '默认3次'
+                                        }
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        'component': 'VRow',
+                        'content': [
+                            {
+                                'component': 'VCol',
+                                'props': {
                                     'cols': 12
                                 },
                                 'content': [
@@ -463,6 +545,9 @@ class TmdbHostUpdater(_PluginBase):
             "clear_on_stop": False,
             "notify_on_error": True,
             "auto_switch_mirror": True,
+            "health_check_interval": 5,
+            "ping_retry_count": 3,
+            "ping_retry_interval": 5,
             "last_update_time": "",
             "last_update_status": "",
             "current_hosts": "",
@@ -842,41 +927,9 @@ class TmdbHostUpdater(_PluginBase):
                 self._current_hosts = '\n'.join(all_hosts)
                 self._manual_hosts = self.__read_system_hosts_text()
                 logger.info("TMDB Hosts更新完成")
-
-                # 更新后 ping TMDB 域名，不通则重试一次
-                tmdb_check = self.__ping_all()
-                tmdb_failed = [r for r in tmdb_check if r["host"] in self.TMDB_DOMAINS and not r["success"]]
-                if tmdb_failed:
-                    failed_names = [r["host"] for r in tmdb_failed]
-                    logger.warning(f"TMDB域名ping不通: {failed_names}，尝试重新拉取并更新hosts")
-                    # 重新拉取一次
-                    retry_hosts = []
-                    retry_v4 = self.__fetch_hosts(self._ipv4_url)
-                    if retry_v4:
-                        retry_hosts.extend(self.__parse_hosts(retry_v4))
-                    if self._enable_ipv6 and self._ipv6_url:
-                        retry_v6 = self.__fetch_hosts(self._ipv6_url)
-                        if retry_v6:
-                            retry_hosts.extend(self.__parse_hosts(retry_v6))
-                    if retry_hosts:
-                        self.__add_hosts_to_system(retry_hosts)
-                        self._current_hosts = '\n'.join(retry_hosts)
-                        self._manual_hosts = self.__read_system_hosts_text()
-                        # 再 ping 一次
-                        tmdb_check2 = self.__ping_all()
-                        tmdb_failed2 = [r for r in tmdb_check2 if r["host"] in self.TMDB_DOMAINS and not r["success"]]
-                        if tmdb_failed2:
-                            self.__notify("TMDB Host更新 - TMDB不可达",
-                                          f"更新hosts后以下域名仍无法ping通：{', '.join(failed_names)}，请检查网络或DNS配置。")
-                            logger.warning(f"重试后TMDB域名仍不通: {[r['host'] for r in tmdb_failed2]}")
-                        else:
-                            logger.info("重试后TMDB域名全部可达")
-                    else:
-                        self.__notify("TMDB Host更新 - 重试失败",
-                                      f"TMDB域名不通但重试拉取hosts也失败，请检查网络。")
-
-                # 保存 ping 结果
-                self._ping_results = json.dumps(tmdb_check, ensure_ascii=False)
+                # 更新后重置健康检查状态
+                self._health_retry_count = 0
+                self._health_failing = False
             else:
                 self._last_update_status = "failed"
                 logger.error("TMDB Hosts更新失败")
@@ -893,6 +946,93 @@ class TmdbHostUpdater(_PluginBase):
             self.__notify("TMDB Host更新异常", f"更新过程中发生异常：{str(e)}")
             return False
 
+    def __check_tmdb_connectivity(self) -> bool:
+        """检查TMDB域名连通性，返回True表示全部可达"""
+        results = self.__ping_all()
+        tmdb_results = [r for r in results if r["host"] in self.TMDB_DOMAINS]
+        self._ping_results = json.dumps(results, ensure_ascii=False)
+        return all(r["success"] for r in tmdb_results)
+
+    def __health_check(self):
+        """定期健康检查：检测TMDB域名连通性，不通则重试+拉取远端对比+通知"""
+        try:
+            logger.info(f"TMDB域名健康检查 (失败计数: {self._health_retry_count}/{self._ping_retry_count})")
+
+            tmdb_ok = self.__check_tmdb_connectivity()
+
+            if tmdb_ok:
+                if self._health_failing:
+                    self._health_failing = False
+                    self._health_retry_count = 0
+                    self.__save_config()
+                    self.__notify("TMDB Host更新 - 已恢复", "TMDB域名已恢复连通，Hosts工作正常。")
+                    logger.info("TMDB域名已恢复连通")
+                else:
+                    self._health_retry_count = 0
+                return
+
+            # TMDB域名不通
+            self._health_retry_count += 1
+            self.__save_config()
+
+            # 如果已经处于failing状态(远端未更新等待中)，跳过重试计数，直接拉取对比
+            if self._health_failing:
+                logger.info("TMDB域名持续不通，拉取远端hosts进行对比")
+                self._health_retry_count = 0
+                self.__do_fetch_and_compare()
+                return
+
+            if self._health_retry_count < self._ping_retry_count:
+                logger.info(f"TMDB域名ping不通，将在下次健康检查重试 ({self._health_retry_count}/{self._ping_retry_count})")
+                return
+
+            # 重试次数耗尽，进入failing状态，拉取远端对比
+            logger.warning(f"TMDB域名持续不通(已重试{self._ping_retry_count}次)，拉取远端hosts进行对比")
+            self._health_failing = True
+            self._health_retry_count = 0
+            self.__do_fetch_and_compare()
+
+        except Exception as e:
+            logger.error(f"健康检查异常: {str(e)}")
+            self._health_retry_count = 0
+            self.__save_config()
+
+    def __do_fetch_and_compare(self):
+        """拉取远端hosts并与本地对比，根据结果更新或通知"""
+        remote_content = self.__fetch_hosts(self._ipv4_url)
+        if not remote_content:
+            self.__notify("TMDB Host更新 - 拉取失败",
+                          "TMDB域名不通且拉取远端hosts失败，请检查网络。")
+            self.__save_config()
+            return
+
+        remote_hosts = self.__parse_hosts(remote_content)
+        remote_str = '\n'.join(remote_hosts)
+
+        if remote_str == self._current_hosts:
+            self.__notify("TMDB Host更新 - 远端未更新",
+                          "TMDB域名不通，但远端hosts与本地一致无变更，等待远端更新。")
+            logger.info("远端hosts与本地一致，等待远端更新")
+        else:
+            # 远端有更新，应用新hosts
+            if self.__add_hosts_to_system(remote_hosts):
+                self._current_hosts = remote_str
+                self._manual_hosts = self.__read_system_hosts_text()
+                self._last_update_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                self._last_update_status = "success"
+                self.__save_config()
+                logger.info(f"远端hosts有更新，已自动更新({len(remote_hosts)}条)")
+                # 更新后检查是否恢复
+                if self.__check_tmdb_connectivity():
+                    self._health_failing = False
+                    self.__notify("TMDB Host更新 - 已恢复",
+                                  f"更新hosts后TMDB域名已恢复连通。({len(remote_hosts)}条)")
+                else:
+                    self.__notify("TMDB Host更新 - 更新后仍不通",
+                                  f"已更新hosts({len(remote_hosts)}条)但TMDB域名仍不通，请检查网络或DNS。")
+
+        self.__save_config()
+
     def __save_config(self):
         self.update_config({
             "enabled": self._enabled,
@@ -904,6 +1044,11 @@ class TmdbHostUpdater(_PluginBase):
             "clear_on_stop": self._clear_on_stop,
             "notify_on_error": self._notify_on_error,
             "auto_switch_mirror": self._auto_switch_mirror,
+            "health_check_interval": self._health_check_interval,
+            "ping_retry_count": self._ping_retry_count,
+            "ping_retry_interval": self._ping_retry_interval,
+            "health_retry_count": self._health_retry_count,
+            "health_failing": self._health_failing,
             "last_update_time": self._last_update_time,
             "last_update_status": self._last_update_status,
             "current_hosts": self._current_hosts,
