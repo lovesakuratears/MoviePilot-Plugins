@@ -1,3 +1,7 @@
+import json
+import re
+import subprocess
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Tuple, Dict, Any, Optional
 from datetime import datetime, timedelta
 from apscheduler.triggers.interval import IntervalTrigger
@@ -7,7 +11,7 @@ import requests
 from app.core.event import eventmanager
 from app.log import logger
 from app.plugins import _PluginBase
-from app.schemas.types import EventType
+from app.schemas.types import EventType, NotificationType
 from app.utils.ip import IpUtils
 from app.utils.system import SystemUtils
 
@@ -16,12 +20,27 @@ class TmdbHostUpdater(_PluginBase):
     plugin_name = "TMDB Host更新"
     plugin_desc = "定时从CheckTMDB获取最新TMDB hosts，自动更新系统hosts文件，解决TMDB无法访问问题。"
     plugin_icon = "hosts.png"
-    plugin_version = "1.0.7"
+    plugin_version = "1.0.8"
     plugin_author = "lovesakuratears"
     author_url = "https://github.com/cnwikee/CheckTMDB"
     plugin_config_prefix = "tmdbhostupdater_"
     plugin_order = 11
     auth_level = 1
+
+    # 需要 ping 检测的域名分组
+    TMDB_DOMAINS = ["api.themoviedb.org", "api.tmdb.org", "www.themoviedb.org"]
+    GITHUB_DOMAINS = ["github.com", "api.github.com", "codeload.github.com", "raw.githubusercontent.com"]
+
+    # 镜像候选列表（自动切换时按顺序尝试）
+    MIRROR_LIST = [
+        "https://gh-proxy.com/",
+        "https://ghproxy.net/",
+        "https://github.akams.cn/",
+        "https://hub.fastgit.xyz",
+        "https://kkgithub.com",
+        "https://hub.nuaa.cf",
+        "https://github.com.cnpmjs.org",
+    ]
 
     _enabled = False
     _interval = 6
@@ -30,10 +49,14 @@ class TmdbHostUpdater(_PluginBase):
     _github_mirror = "https://gh-proxy.com/"
     _enable_ipv6 = False
     _clear_on_stop = False
+    _notify_on_error = True
+    _auto_switch_mirror = True
     _last_update_time = ""
     _last_update_status = ""
     _current_hosts = ""
     _manual_hosts = ""
+    _mirror_index = 0
+    _ping_results = "[]"
 
     def init_plugin(self, config: dict = None):
         if config:
@@ -44,10 +67,14 @@ class TmdbHostUpdater(_PluginBase):
             self._github_mirror = config.get("github_mirror", self._github_mirror) or "https://gh-proxy.com/"
             self._enable_ipv6 = config.get("enable_ipv6", False)
             self._clear_on_stop = config.get("clear_on_stop", False)
+            self._notify_on_error = config.get("notify_on_error", True)
+            self._auto_switch_mirror = config.get("auto_switch_mirror", True)
             self._last_update_time = config.get("last_update_time", "")
             self._last_update_status = config.get("last_update_status", "")
             self._current_hosts = config.get("current_hosts", "")
             self._manual_hosts = config.get("manual_hosts", "")
+            self._mirror_index = int(config.get("mirror_index", 0))
+            self._ping_results = config.get("ping_results", "[]")
 
         # 加载时从系统 hosts 读取完整内容，让手动编辑框显示真实 hosts 便于直观编辑
         system_hosts_content = self.__read_system_hosts_text()
@@ -104,6 +131,30 @@ class TmdbHostUpdater(_PluginBase):
                 "auth": "bear",
                 "summary": "获取更新状态",
                 "description": "获取当前hosts更新状态和列表",
+            },
+            {
+                "path": "/ping",
+                "endpoint": self.__api_ping,
+                "methods": ["POST"],
+                "auth": "bear",
+                "summary": "Ping检测TMDB和GitHub域名",
+                "description": "检测TMDB和GitHub相关域名的连通性，返回延迟和状态",
+            },
+            {
+                "path": "/ping_single",
+                "endpoint": self.__api_ping_single,
+                "methods": ["POST"],
+                "auth": "bear",
+                "summary": "Ping单个域名",
+                "description": "检测单个域名的连通性",
+            },
+            {
+                "path": "/auto_switch_mirror",
+                "endpoint": self.__api_auto_switch_mirror,
+                "methods": ["POST"],
+                "auth": "bear",
+                "summary": "自动切换GitHub镜像",
+                "description": "自动切换到下一个可用镜像地址",
             }
         ]
 
@@ -228,6 +279,43 @@ class TmdbHostUpdater(_PluginBase):
                                         'props': {
                                             'model': 'clear_on_stop',
                                             'label': '停用清理Hosts',
+                                        }
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        'component': 'VRow',
+                        'content': [
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12,
+                                    'md': 6
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VSwitch',
+                                        'props': {
+                                            'model': 'notify_on_error',
+                                            'label': '异常通知',
+                                        }
+                                    }
+                                ]
+                            },
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12,
+                                    'md': 6
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VSwitch',
+                                        'props': {
+                                            'model': 'auto_switch_mirror',
+                                            'label': '自动切换镜像',
                                         }
                                     }
                                 ]
@@ -373,6 +461,8 @@ class TmdbHostUpdater(_PluginBase):
             "github_mirror": "",
             "enable_ipv6": False,
             "clear_on_stop": False,
+            "notify_on_error": True,
+            "auto_switch_mirror": True,
             "last_update_time": "",
             "last_update_status": "",
             "current_hosts": "",
@@ -391,106 +481,181 @@ class TmdbHostUpdater(_PluginBase):
 
         hosts_text = self._current_hosts or "暂无数据，请点击右上角\"立即更新\"按钮获取"
 
-        return [
+        # 自动 ping 检测（多线程，约2-3秒完成）
+        try:
+            ping_results = self.__ping_all()
+            self._ping_results = json.dumps(ping_results, ensure_ascii=False)
+        except Exception:
+            ping_results = []
+
+        # 构建 ping 结果行
+        ping_rows = []
+        for r in ping_results:
+            host = r.get("host", "")
+            success = r.get("success", False)
+            latency = r.get("latency_ms", 0)
+            icon = "mdi-check-circle"
+            color = "success"
+            latency_text = f"{latency:.0f} ms" if success else "不通"
+            if not success:
+                icon = "mdi-close-circle"
+                color = "error"
+            ping_rows.append({
+                'component': 'VRow',
+                'props': {'align': 'center', 'class': 'py-1'},
+                'content': [
+                    {
+                        'component': 'VCol',
+                        'props': {'cols': 1, 'class': 'pa-0'},
+                        'content': [{
+                            'component': 'VIcon',
+                            'props': {'color': color, 'size': 'small'},
+                            'text': icon
+                        }]
+                    },
+                    {
+                        'component': 'VCol',
+                        'props': {'cols': 5, 'class': 'text-body-2'},
+                        'text': host
+                    },
+                    {
+                        'component': 'VCol',
+                        'props': {'cols': 3, 'class': 'text-body-2'},
+                        'text': latency_text
+                    },
+                    {
+                        'component': 'VCol',
+                        'props': {'cols': 3, 'class': 'text-right pa-0'},
+                        'content': [{
+                            'component': 'VBtn',
+                            'props': {'icon': 'mdi-refresh', 'size': 'x-small', 'variant': 'text'},
+                            'events': {
+                                'click': {
+                                    'api': 'plugin/TmdbHostUpdater/ping_single',
+                                    'method': 'post',
+                                    'params': {'host': host}
+                                }
+                            }
+                        }]
+                    }
+                ]
+            })
+
+        page_content = [
             {
                 'component': 'VCard',
-                'props': {
-                    'variant': 'tonal',
-                    'class': 'mb-4'
-                },
+                'props': {'variant': 'tonal', 'class': 'mb-4'},
+                'content': [{
+                    'component': 'VCardText',
+                    'content': [{
+                        'component': 'VRow',
+                        'props': {'align': 'center'},
+                        'content': [
+                            {
+                                'component': 'VCol',
+                                'props': {'cols': 12, 'md': 8},
+                                'content': [{
+                                    'component': 'VAlert',
+                                    'props': {
+                                        'type': status_type,
+                                        'variant': 'tonal',
+                                        'text': f'最后更新：{status_text}'
+                                    }
+                                }]
+                            },
+                            {
+                                'component': 'VCol',
+                                'props': {'cols': 12, 'md': 4, 'class': 'text-right'},
+                                'content': [{
+                                    'component': 'VBtn',
+                                    'props': {'color': 'primary', 'variant': 'flat', 'prependIcon': 'mdi-refresh'},
+                                    'events': {
+                                        'click': {
+                                            'api': 'plugin/TmdbHostUpdater/update',
+                                            'method': 'post',
+                                            'params': {}
+                                        }
+                                    },
+                                    'text': '立即更新'
+                                }]
+                            }
+                        ]
+                    }]
+                }]
+            },
+            {
+                'component': 'VCard',
+                'props': {'variant': 'tonal', 'class': 'mb-4'},
                 'content': [
+                    {'component': 'VCardTitle', 'text': '域名连通性检测'},
                     {
                         'component': 'VCardText',
                         'content': [
                             {
                                 'component': 'VRow',
-                                'props': {
-                                    'align': 'center'
-                                },
-                                'content': [
-                                    {
-                                        'component': 'VCol',
-                                        'props': {
-                                            'cols': 12,
-                                            'md': 8
-                                        },
-                                        'content': [
-                                            {
-                                                'component': 'VAlert',
-                                                'props': {
-                                                    'type': status_type,
-                                                    'variant': 'tonal',
-                                                    'text': f'最后更新：{status_text}'
-                                                }
+                                'props': {'class': 'mb-2'},
+                                'content': [{
+                                    'component': 'VCol',
+                                    'props': {'cols': 12, 'class': 'text-right'},
+                                    'content': [{
+                                        'component': 'VBtn',
+                                        'props': {'color': 'primary', 'variant': 'tonal', 'size': 'small', 'prependIcon': 'mdi-refresh'},
+                                        'events': {
+                                            'click': {
+                                                'api': 'plugin/TmdbHostUpdater/ping',
+                                                'method': 'post',
+                                                'params': {}
                                             }
-                                        ]
-                                    },
-                                    {
-                                        'component': 'VCol',
-                                        'props': {
-                                            'cols': 12,
-                                            'md': 4,
-                                            'class': 'text-right'
                                         },
-                                        'content': [
-                                            {
-                                                'component': 'VBtn',
-                                                'props': {
-                                                    'color': 'primary',
-                                                    'variant': 'flat',
-                                                },
-                                                'events': {
-                                                    'click': {
-                                                        'api': 'plugin/TmdbHostUpdater/update',
-                                                        'method': 'post',
-                                                        'params': {}
-                                                    }
-                                                },
-                                                'content': [
-                                                    {
-                                                        'component': 'VIcon',
-                                                        'props': {
-                                                            'start': True
-                                                        },
-                                                        'text': 'mdi-refresh'
-                                                    },
-                                                    '立即更新'
-                                                ]
-                                            }
-                                        ]
-                                    }
-                                ]
+                                        'text': 'Ping检测'
+                                    }]
+                                }]
+                            },
+                            # TMDB 分组
+                            {
+                                'component': 'VRow',
+                                'props': {'class': 'mb-1'},
+                                'content': [{
+                                    'component': 'VCol',
+                                    'props': {'cols': 12},
+                                    'text': 'TMDB 域名'
+                                }]
                             }
-                        ]
+                        ] + [r for r in ping_rows if r.get('content', [{}])[1].get('text', '') in self.TMDB_DOMAINS] + [
+                            # GitHub 分组
+                            {
+                                'component': 'VRow',
+                                'props': {'class': 'mb-1 mt-2'},
+                                'content': [{
+                                    'component': 'VCol',
+                                    'props': {'cols': 12},
+                                    'text': 'GitHub 域名'
+                                }]
+                            }
+                        ] + [r for r in ping_rows if r.get('content', [{}])[1].get('text', '') in self.GITHUB_DOMAINS]
                     }
                 ]
             },
             {
                 'component': 'VCard',
-                'props': {
-                    'variant': 'tonal'
-                },
+                'props': {'variant': 'tonal'},
                 'content': [
-                    {
-                        'component': 'VCardTitle',
-                        'text': '当前生效的Hosts'
-                    },
+                    {'component': 'VCardTitle', 'text': '当前生效的Hosts'},
                     {
                         'component': 'VCardText',
-                        'content': [
-                            {
-                                'component': 'pre',
-                                'props': {
-                                    'class': 'text-body-2 pa-2',
-                                    'style': 'white-space: pre-wrap; word-break: break-all; max-height: 480px; overflow-y: auto;'
-                                },
-                                'text': hosts_text
-                            }
-                        ]
+                        'content': [{
+                            'component': 'pre',
+                            'props': {
+                                'class': 'text-body-2 pa-2',
+                                'style': 'white-space: pre-wrap; word-break: break-all; max-height: 480px; overflow-y: auto;'
+                            },
+                            'text': hosts_text
+                        }]
                     }
                 ]
             }
         ]
+        return page_content
 
     def stop_service(self):
         if self._clear_on_stop and self._current_hosts:
@@ -634,6 +799,20 @@ class TmdbHostUpdater(_PluginBase):
 
             all_hosts = []
 
+            # 先 ping 检测 GitHub 域名，如果全部不通则尝试自动切换镜像
+            gh_ping_results = [self.__ping_host(h) for h in self.GITHUB_DOMAINS]
+            gh_all_fail = all(not r["success"] for r in gh_ping_results)
+            if gh_all_fail and self._auto_switch_mirror:
+                logger.warning("GitHub域名全部不通，尝试自动切换镜像")
+                switched = self.__try_auto_switch_mirror()
+                if not switched:
+                    self._last_update_status = "failed"
+                    self._last_update_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    self.__save_config()
+                    self.__notify("TMDB Host更新 - GitHub不可达",
+                                  "GitHub全部域名无法访问且所有镜像均不可用，请检查网络或手动添加新镜像。")
+                    return False
+
             ipv4_content = self.__fetch_hosts(self._ipv4_url)
             if ipv4_content:
                 ipv4_hosts = self.__parse_hosts(ipv4_content)
@@ -652,6 +831,7 @@ class TmdbHostUpdater(_PluginBase):
                 self._last_update_status = "failed"
                 self._last_update_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 self.__save_config()
+                self.__notify("TMDB Host更新失败", "拉取远端hosts数据失败，请检查网络连接或镜像地址。")
                 return False
 
             success = self.__add_hosts_to_system(all_hosts)
@@ -660,12 +840,47 @@ class TmdbHostUpdater(_PluginBase):
             if success:
                 self._last_update_status = "success"
                 self._current_hosts = '\n'.join(all_hosts)
-                # 定时更新只修改了插件管理的部分，重新读取完整系统 hosts 同步到编辑框
                 self._manual_hosts = self.__read_system_hosts_text()
                 logger.info("TMDB Hosts更新完成")
+
+                # 更新后 ping TMDB 域名，不通则重试一次
+                tmdb_check = self.__ping_all()
+                tmdb_failed = [r for r in tmdb_check if r["host"] in self.TMDB_DOMAINS and not r["success"]]
+                if tmdb_failed:
+                    failed_names = [r["host"] for r in tmdb_failed]
+                    logger.warning(f"TMDB域名ping不通: {failed_names}，尝试重新拉取并更新hosts")
+                    # 重新拉取一次
+                    retry_hosts = []
+                    retry_v4 = self.__fetch_hosts(self._ipv4_url)
+                    if retry_v4:
+                        retry_hosts.extend(self.__parse_hosts(retry_v4))
+                    if self._enable_ipv6 and self._ipv6_url:
+                        retry_v6 = self.__fetch_hosts(self._ipv6_url)
+                        if retry_v6:
+                            retry_hosts.extend(self.__parse_hosts(retry_v6))
+                    if retry_hosts:
+                        self.__add_hosts_to_system(retry_hosts)
+                        self._current_hosts = '\n'.join(retry_hosts)
+                        self._manual_hosts = self.__read_system_hosts_text()
+                        # 再 ping 一次
+                        tmdb_check2 = self.__ping_all()
+                        tmdb_failed2 = [r for r in tmdb_check2 if r["host"] in self.TMDB_DOMAINS and not r["success"]]
+                        if tmdb_failed2:
+                            self.__notify("TMDB Host更新 - TMDB不可达",
+                                          f"更新hosts后以下域名仍无法ping通：{', '.join(failed_names)}，请检查网络或DNS配置。")
+                            logger.warning(f"重试后TMDB域名仍不通: {[r['host'] for r in tmdb_failed2]}")
+                        else:
+                            logger.info("重试后TMDB域名全部可达")
+                    else:
+                        self.__notify("TMDB Host更新 - 重试失败",
+                                      f"TMDB域名不通但重试拉取hosts也失败，请检查网络。")
+
+                # 保存 ping 结果
+                self._ping_results = json.dumps(tmdb_check, ensure_ascii=False)
             else:
                 self._last_update_status = "failed"
                 logger.error("TMDB Hosts更新失败")
+                self.__notify("TMDB Host更新失败", "写入系统hosts文件失败，请检查权限。")
 
             self.__save_config()
             return success
@@ -675,6 +890,7 @@ class TmdbHostUpdater(_PluginBase):
             self._last_update_status = "failed"
             self._last_update_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             self.__save_config()
+            self.__notify("TMDB Host更新异常", f"更新过程中发生异常：{str(e)}")
             return False
 
     def __save_config(self):
@@ -686,10 +902,14 @@ class TmdbHostUpdater(_PluginBase):
             "github_mirror": self._github_mirror,
             "enable_ipv6": self._enable_ipv6,
             "clear_on_stop": self._clear_on_stop,
+            "notify_on_error": self._notify_on_error,
+            "auto_switch_mirror": self._auto_switch_mirror,
             "last_update_time": self._last_update_time,
             "last_update_status": self._last_update_status,
             "current_hosts": self._current_hosts,
-            "manual_hosts": self._manual_hosts
+            "manual_hosts": self._manual_hosts,
+            "mirror_index": self._mirror_index,
+            "ping_results": self._ping_results
         })
 
     def __api_update(self):
@@ -778,3 +998,112 @@ class TmdbHostUpdater(_PluginBase):
                 "interval": self._interval
             }
         }
+
+    def __ping_host(self, host: str) -> Dict[str, Any]:
+        """Ping单个域名，返回 {host, success, latency_ms, error}"""
+        try:
+            if SystemUtils.is_windows():
+                cmd = ["ping", "-n", "1", "-w", "2000", host]
+            else:
+                cmd = ["ping", "-c", "1", "-W", "2", host]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+            output = result.stdout + result.stderr
+            if result.returncode == 0:
+                # 提取延迟时间，支持中英文输出
+                # Linux: "time=795 ms"  Windows: "时间=795ms" or "time<1ms"
+                match = re.search(r'time[=<]\s*(\d+\.?\d*)\s*ms', output, re.IGNORECASE)
+                if match:
+                    latency = float(match.group(1))
+                else:
+                    latency = 0.0
+                return {"host": host, "success": True, "latency_ms": latency, "error": ""}
+            else:
+                return {"host": host, "success": False, "latency_ms": 0, "error": "ping不通"}
+        except subprocess.TimeoutExpired:
+            return {"host": host, "success": False, "latency_ms": 0, "error": "超时"}
+        except Exception as e:
+            return {"host": host, "success": False, "latency_ms": 0, "error": str(e)}
+
+    def __ping_all(self) -> List[Dict[str, Any]]:
+        """多线程Ping所有TMDB和GitHub域名"""
+        hosts = self.TMDB_DOMAINS + self.GITHUB_DOMAINS
+        results = []
+        with ThreadPoolExecutor(max_workers=len(hosts)) as executor:
+            future_map = {executor.submit(self.__ping_host, h): h for h in hosts}
+            for future in as_completed(future_map):
+                results.append(future.result())
+        # 保持原始顺序
+        host_order = {h: i for i, h in enumerate(hosts)}
+        results.sort(key=lambda r: host_order.get(r["host"], 99))
+        return results
+
+    def __notify(self, title: str, text: str):
+        """发送通知"""
+        if not self._notify_on_error:
+            return
+        try:
+            self.post_message(mtype=NotificationType.Plugin, title=title, text=text)
+            logger.info(f"已发送通知: {title}")
+        except Exception as e:
+            logger.warning(f"发送通知失败: {str(e)}")
+
+    def __try_auto_switch_mirror(self) -> bool:
+        """自动切换到下一个可用镜像，返回是否成功切换"""
+        if not self._auto_switch_mirror:
+            return False
+        total = len(self.MIRROR_LIST)
+        for attempt in range(total):
+            self._mirror_index = (self._mirror_index + 1) % total
+            new_mirror = self.MIRROR_LIST[self._mirror_index]
+            logger.info(f"尝试切换镜像 [{attempt+1}/{total}]: {new_mirror}")
+            # 测试镜像是否可用：尝试通过镜像fetch一个已知URL
+            test_url = f"{new_mirror.rstrip('/')}/raw.githubusercontent.com/cnwikee/CheckTMDB/main/Tmdb_host_ipv4"
+            try:
+                resp = requests.get(test_url, timeout=10)
+                if resp.status_code == 200:
+                    self._github_mirror = new_mirror
+                    self.__save_config()
+                    logger.info(f"镜像切换成功: {new_mirror}")
+                    return True
+            except Exception as e:
+                logger.warning(f"镜像不可用 [{new_mirror}]: {str(e)}")
+        logger.error("所有镜像均不可用")
+        return False
+
+    def __api_ping(self):
+        """Ping检测API"""
+        results = self.__ping_all()
+        self._ping_results = json.dumps(results, ensure_ascii=False)
+        self.__save_config()
+        return {"code": 0, "data": results}
+
+    def __api_ping_single(self, host: str = ""):
+        """Ping单个域名API"""
+        if not host:
+            return {"code": 1, "message": "缺少host参数"}
+        result = self.__ping_host(host)
+        # 更新缓存中的对应条目
+        try:
+            cached = json.loads(self._ping_results or "[]")
+            updated = False
+            for i, item in enumerate(cached):
+                if item.get("host") == host:
+                    cached[i] = result
+                    updated = True
+                    break
+            if not updated:
+                cached.append(result)
+            self._ping_results = json.dumps(cached, ensure_ascii=False)
+            self.__save_config()
+        except Exception:
+            pass
+        return {"code": 0, "data": result}
+
+    def __api_auto_switch_mirror(self):
+        """自动切换镜像API"""
+        success = self.__try_auto_switch_mirror()
+        if success:
+            return {"code": 0, "message": f"镜像已切换为: {self._github_mirror}"}
+        else:
+            self.__notify("TMDB Host更新 - 镜像全部失效", "所有GitHub镜像地址均不可用，请手动添加新的镜像地址或检查网络。")
+            return {"code": 1, "message": "所有镜像均不可用，已发送通知"}
