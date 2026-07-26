@@ -1,41 +1,41 @@
-﻿{
-    "TmdbHostUpdater":  {
-                            "name":  "TMDB Host更新",
-                            "description":  "定时从CheckTMDB获取最新TMDB hosts，自动更新系统hosts文件，解决TMDB无法访问问题。",
-                            "labels":  "网络工具,TMDB,Hosts",
-                            "version":  "1.0.11",
-                            "icon":  "hosts.png",
-                            "author":  "lovesakuratears",
-                            "author_url":  "https://github.com/cnwikee/CheckTMDB",
-                            "level":  1,
-                            "history":  {
-                                            "v1.0.0":  "初始版本，定时从CheckTMDB获取TMDB hosts并自动更新系统hosts文件，支持IPv4/IPv6、GitHub镜像、手动更新",
-                                            "v1.0.1":  "移除 python_hosts 外部依赖，改用标准库操作 hosts 文件，修复插件加载失败问题",
-                                            "v1.0.2":  "raw.githubusercontent.com 超时时自动切换 jsdelivr CDN 备用源，提升国内可用性",
-                                            "v1.0.3":  "修复当前生效Hosts页面不显示的问题，model绑定到current_hosts配置字段",
-                                            "v1.0.4":  "修复当前生效Hosts页面不显示的问题，改用 pre 标签直接渲染内容",
-                                            "v1.0.5":  "支持在配置页面手动编辑hosts并保存，保存时校验IP/域名格式",
-                                            "v1.0.6":  "手动编辑框显示完整/etc/hosts内容；GitHub镜像改为下拉选择+手动输入；默认镜像https://gh-proxy.com/；修复保存按钮文字显示问题",
-                                            "v1.0.7":  "修复手动编辑host文本框空白问题（持久化系统hosts到配置）；VAlert信息提示移到表单最顶部",
-                                            "v1.0.8":  "新增域名连通性检测(Ping红绿灯+延迟ms)；新增异常通知开关；新增自动切换镜像；更新后自动ping检查TMDB/GitHub域名，不通则重试+通知",
-                                            "v1.0.9":  "新增自动健康检查：可自定义检查间隔(默认5分钟)、Ping重试次数(默认3次)和重试间隔(默认5分钟)；重试耗尽后自动拉取远端hosts对比，远端无变更则通知等待更新，有变更则自动更新并检测连通性恢复",
-                                            "v1.0.10":  "修复容器环境Ping检测失败问题（增加TCP端口探测fallback）；优化UI布局，改用紧凑表格减少空白，提升可读性",
-                                            "v1.0.11":  "优化通知去重：同标题通知只发送一次，避免健康检查重复推送骚扰用户"
-                                        }
-                        },
-    "DoubanUpcoming":  {
-                           "name":  "刷豆瓣助手",
-                           "description":  "省去打开豆瓣的过程，提供一条龙订阅推送服务。定时获取豆瓣即将播出/热门影视榜单，支持通过豆瓣UID获取想看列表并自动订阅未上映条目。",
-                           "labels":  "豆瓣,RSS,订阅,想看",
-                           "version":  "1.2.0",
-                           "icon":  "douban.png",
-                           "author":  "lovesakuratears",
-                           "author_url":  "https://github.com/lovesakuratears/MoviePilot-Plugins",
-                           "level":  1,
-                           "history":  {
-                                           "v1.2.0":  "新增开播前24小时提醒、播放平台搜索（Bing）、豆瓣页面抓取补充海报/评分/集数/日期、豆瓣订阅（MoviePilot API）、通知搜预告按钮（跳转抖音）、清除历史记录改为开关、立即执行一次",
-                                           "v1.1.0":  "插件重命名为刷豆瓣助手；新增豆瓣UID和豆瓣想看功能，支持自动获取用户想看列表并订阅未上映条目；榜单数据源精简为即将上映和实时热门",
-                                           "v1.0.0":  "初始版本，支持RSSHub数据获取、富媒体通知推送、TMDB/豆瓣订阅、本地追踪"
-                                       }
-                       }
+{
+  "TmdbHostUpdater": {
+    "name": "TMDB Host更新",
+    "description": "定时从CheckTMDB获取最新TMDB hosts，自动更新系统hosts文件，解决TMDB无法访问问题。",
+    "labels": "网络工具,TMDB,Hosts",
+    "version": "1.0.11",
+    "icon": "hosts.png",
+    "author": "lovesakuratears",
+    "author_url": "https://github.com/lovesakuratears/MoviePilot-Plugins",
+    "level": 1,
+    "history": {
+      "v1.0.0": "初始版本，定时从CheckTMDB获取TMDB hosts并自动更新系统hosts文件，支持IPv4/IPv6、GitHub镜像、手动更新",
+      "v1.0.1": "移除 python_hosts 外部依赖，改用标准库操作 hosts 文件，修复插件加载失败问题",
+      "v1.0.2": "raw.githubusercontent.com 超时时自动切换 jsdelivr CDN 备用源，提升国内可用性",
+      "v1.0.3": "修复当前生效Hosts页面不显示的问题，model绑定到current_hosts配置字段",
+      "v1.0.4": "修复当前生效Hosts页面不显示的问题，改用 pre 标签直接渲染内容",
+      "v1.0.5": "支持在配置页面手动编辑hosts并保存，保存时校验IP/域名格式",
+      "v1.0.6": "手动编辑框显示完整/etc/hosts内容；GitHub镜像改为下拉选择+手动输入；默认镜像https://gh-proxy.com/；修复保存按钮文字显示问题",
+      "v1.0.7": "修复手动编辑host文本框空白问题（持久化系统hosts到配置）；VAlert信息提示移到表单最顶部",
+      "v1.0.8": "新增域名连通性检测(Ping红绿灯+延迟ms)；新增异常通知开关；新增自动切换镜像；更新后自动ping检查TMDB/GitHub域名，不通则重试+通知",
+      "v1.0.9": "新增自动健康检查：可自定义检查间隔(默认5分钟)、Ping重试次数(默认3次)和重试间隔(默认5分钟)；重试耗尽后自动拉取远端hosts对比，远端无变更则通知等待更新，有变更则自动更新并检测连通性恢复",
+      "v1.0.10": "修复容器环境Ping检测失败问题（增加TCP端口探测fallback）；优化UI布局，改用紧凑表格减少空白，提升可读性",
+      "v1.0.11": "优化通知去重：同标题通知只发送一次，避免健康检查重复推送骚扰用户"
+    }
+  },
+  "DoubanUpcoming": {
+    "name": "刷豆瓣助手",
+    "description": "省去打开豆瓣的过程，提供一条龙订阅推送服务。定时获取豆瓣即将播出/热门影视榜单，支持通过豆瓣UID获取想看列表并自动订阅未上映条目。",
+    "labels": "豆瓣,RSS,订阅,想看",
+    "version": "1.2.0",
+    "icon": "douban.png",
+    "author": "lovesakuratears",
+    "author_url": "https://github.com/lovesakuratears/MoviePilot-Plugins",
+    "level": 1,
+    "history": {
+      "v1.2.0": "新增开播前24小时提醒、播放平台搜索（Bing）、豆瓣页面抓取补充海报/评分/集数/日期、豆瓣订阅（MoviePilot API）、通知搜预告按钮（跳转抖音）、清除历史记录改为开关、立即执行一次",
+      "v1.1.0": "插件重命名为刷豆瓣助手；新增豆瓣UID和豆瓣想看功能，支持自动获取用户想看列表并订阅未上映条目；榜单数据源精简为即将上映和实时热门",
+      "v1.0.0": "初始版本，支持RSSHub数据获取、富媒体通知推送、TMDB/豆瓣订阅、本地追踪"
+    }
+  }
 }
