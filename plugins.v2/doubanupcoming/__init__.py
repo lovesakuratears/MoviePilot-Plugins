@@ -21,7 +21,7 @@ class DoubanUpcoming(_PluginBase):
     plugin_name = "刷豆瓣助手"
     plugin_desc = "省去打开豆瓣的过程，提供一条龙订阅推送服务。定时获取豆瓣即将播出/热门影视榜单，支持通过豆瓣UID获取想看列表并自动订阅未上映条目。"
     plugin_icon = "douban.png"
-    plugin_version = "1.7.0"
+    plugin_version = "1.8.0"
     plugin_author = "lovesakuratears"
     author_url = "https://github.com/lovesakuratears/MoviePilot-Plugins"
     plugin_config_prefix = "doubanupcoming_"
@@ -416,7 +416,7 @@ class DoubanUpcoming(_PluginBase):
 
     def get_page(self) -> List[dict]:
         """
-        拼装插件详情页面，参考 doubansync 样式：扁平列表 + 水平卡片布局
+        拼装插件详情页面，完全对齐 doubansync 样式
         """
         pushed = {}
         try:
@@ -424,7 +424,6 @@ class DoubanUpcoming(_PluginBase):
         except Exception:
             pass
 
-        # 空状态
         if not pushed:
             return [
                 {
@@ -436,182 +435,121 @@ class DoubanUpcoming(_PluginBase):
                 }
             ]
 
-        interested_items = []
-        not_interested_items = []
-
+        # 数据按时间降序排序
+        items = []
         for douban_id, info in pushed.items():
-            entry = {
+            items.append({
                 "douban_id": douban_id,
                 "title": info.get("title", ""),
-                "douban_url": info.get("douban_url", ""),
                 "time": info.get("time", ""),
-                "release_date": info.get("release_date", ""),
                 "interest": info.get("interest"),
                 "image_url": info.get("image_url", ""),
-                "rating": info.get("rating", ""),
-                "year": info.get("year", ""),
                 "genres": info.get("genres", ""),
-                "summary": info.get("summary", ""),
-            }
-            if info.get("interest") is True:
-                interested_items.append(entry)
-            elif info.get("interest") is False:
-                not_interested_items.append(entry)
+            })
+        items.sort(key=lambda x: x.get("time", ""), reverse=True)
 
-        interested_items.sort(key=lambda x: x.get("time", ""), reverse=True)
-        not_interested_items.sort(key=lambda x: x.get("time", ""), reverse=True)
-
-        def build_card(item):
-            """构建单张水平卡片（参考 doubansync 样式）"""
-            title = item.get("title", "")
-            douban_id = item.get("douban_id", "")
-            image_url = item.get("image_url", "")
+        # 拼装页面
+        contents = []
+        for item in items:
+            title = item.get("title")
+            poster = item.get("image_url")
+            douban_id = item.get("douban_id")
+            time_str = item.get("time")
             genres = item.get("genres", "")
-            release_date = item.get("release_date", "")
-            push_time = item.get("time", "").split(' ')[0] if item.get("time") else ""
-            display_time = release_date if release_date else push_time
             interest = item.get("interest")
             action = "感兴趣" if interest is True else "不感兴趣" if interest is False else ""
 
-            return {
-                'component': 'VCard',
-                'content': [
-                    {
-                        "component": "VDialogCloseBtn",
-                        "props": {
-                            'innerClass': 'absolute top-0 right-0',
-                        },
-                        'events': {
-                            'click': {
-                                'api': 'plugin/DoubanUpcoming/delete_history_item',
-                                'method': 'get',
-                                'params': {
-                                    'douban_id': douban_id,
-                                    'apikey': settings.API_TOKEN
-                                }
-                            }
-                        },
-                    },
-                    {
-                        'component': 'div',
-                        'props': {
-                            'class': 'd-flex justify-space-start flex-nowrap flex-row',
-                        },
-                        'content': [
-                            {
-                                'component': 'div',
-                                'content': [
-                                    {
-                                        'component': 'VImg',
-                                        'props': {
-                                            'src': image_url,
-                                            'height': 120,
-                                            'width': 80,
-                                            'aspect-ratio': '2/3',
-                                            'class': 'object-cover shadow ring-gray-500',
-                                            'cover': True
-                                        }
-                                    }
-                                ]
-                            },
-                            {
-                                'component': 'div',
-                                'content': [
-                                    {
-                                        'component': 'VCardTitle',
-                                        'props': {
-                                            'class': 'ps-1 pe-5 break-words whitespace-break-spaces'
-                                        },
-                                        'content': [
-                                            {
-                                                'component': 'a',
-                                                'props': {
-                                                    'href': f"https://movie.douban.com/subject/{douban_id}",
-                                                    'target': '_blank'
-                                                },
-                                                'text': title
-                                            }
-                                        ]
-                                    },
-                                    {
-                                        'component': 'VCardText',
-                                        'props': {
-                                            'class': 'pa-0 px-2'
-                                        },
-                                        'text': f'类型：{genres}' if genres else '类型：暂无'
-                                    },
-                                    {
-                                        'component': 'VCardText',
-                                        'props': {
-                                            'class': 'pa-0 px-2'
-                                        },
-                                        'text': f'时间：{display_time}' if display_time else '时间：暂无'
-                                    },
-                                    {
-                                        'component': 'VCardText',
-                                        'props': {
-                                            'class': 'pa-0 px-2'
-                                        },
-                                        'text': f'操作：{action}' if action else ''
-                                    }
-                                ]
-                            }
-                        ]
-                    }
-                ]
-            }
-
-        # 扁平列表，不使用 VRow/VCol 包裹
-        page = []
-
-        # 感兴趣 section
-        if interested_items:
-            page.append({
-                'component': 'div',
-                'props': {'class': 'd-flex align-center mb-4'},
-                'content': [
-                    {'component': 'VIcon', 'props': {'icon': 'mdi-heart', 'color': 'red', 'size': '24', 'class': 'me-2'}},
-                    {'component': 'div', 'props': {'class': 'text-h5 font-weight-bold'}, 'text': '感兴趣'},
-                    {'component': 'VChip', 'props': {'size': 'small', 'class': 'ms-2', 'color': 'primary', 'variant': 'tonal'}, 'text': f'{len(interested_items)} 条'},
-                ]
-            })
-            for item in interested_items:
-                page.append(build_card(item))
-
-        # 不感兴趣 section
-        if not_interested_items:
-            page.append({
-                'component': 'div',
-                'props': {'class': 'd-flex align-center mb-4 mt-6'},
-                'content': [
-                    {'component': 'VIcon', 'props': {'icon': 'mdi-heart-off', 'color': 'grey', 'size': '24', 'class': 'me-2'}},
-                    {'component': 'div', 'props': {'class': 'text-h5 font-weight-bold'}, 'text': '不感兴趣'},
-                    {'component': 'VChip', 'props': {'size': 'small', 'class': 'ms-2', 'variant': 'tonal'}, 'text': f'{len(not_interested_items)} 条'},
-                ]
-            })
-            page.append({
-                'component': 'VExpansionPanels',
-                'props': {'variant': 'accordion'},
-                'content': [{
-                    'component': 'VExpansionPanel',
+            contents.append(
+                {
+                    'component': 'VCard',
                     'content': [
                         {
-                            'component': 'VExpansionPanelTitle',
-                            'props': {'class': 'px-0'},
-                            'content': [
-                                {'component': 'span', 'props': {'class': 'text-body-2 text-medium-emphasis'}, 'text': '点击展开查看'}
-                            ]
+                            "component": "VDialogCloseBtn",
+                            "props": {
+                                'innerClass': 'absolute top-0 right-0',
+                            },
+                            'events': {
+                                'click': {
+                                    'api': 'plugin/DoubanUpcoming/delete_history_item',
+                                    'method': 'get',
+                                    'params': {
+                                        'douban_id': douban_id,
+                                        'apikey': settings.API_TOKEN
+                                    }
+                                }
+                            },
                         },
                         {
-                            'component': 'VExpansionPanelText',
-                            'props': {'class': 'px-0 pb-0'},
-                            'content': [build_card(item) for item in not_interested_items]
+                            'component': 'div',
+                            'props': {
+                                'class': 'd-flex justify-space-start flex-nowrap flex-row',
+                            },
+                            'content': [
+                                {
+                                    'component': 'div',
+                                    'content': [
+                                        {
+                                            'component': 'VImg',
+                                            'props': {
+                                                'src': poster,
+                                                'height': 120,
+                                                'width': 80,
+                                                'aspect-ratio': '2/3',
+                                                'class': 'object-cover shadow ring-gray-500',
+                                                'cover': True
+                                            }
+                                        }
+                                    ]
+                                },
+                                {
+                                    'component': 'div',
+                                    'content': [
+                                        {
+                                            'component': 'VCardTitle',
+                                            'props': {
+                                                'class': 'ps-1 pe-5 break-words whitespace-break-spaces'
+                                            },
+                                            'content': [
+                                                {
+                                                    'component': 'a',
+                                                    'props': {
+                                                        'href': f"https://movie.douban.com/subject/{douban_id}",
+                                                        'target': '_blank'
+                                                    },
+                                                    'text': title
+                                                }
+                                            ]
+                                        },
+                                        {
+                                            'component': 'VCardText',
+                                            'props': {
+                                                'class': 'pa-0 px-2'
+                                            },
+                                            'text': f'类型：{genres}' if genres else '类型：暂无'
+                                        },
+                                        {
+                                            'component': 'VCardText',
+                                            'props': {
+                                                'class': 'pa-0 px-2'
+                                            },
+                                            'text': f'时间：{time_str}'
+                                        },
+                                        {
+                                            'component': 'VCardText',
+                                            'props': {
+                                                'class': 'pa-0 px-2'
+                                            },
+                                            'text': f'操作：{action}' if action else ''
+                                        }
+                                    ]
+                                }
+                            ]
                         }
                     ]
-                }]
-            })
+                }
+            )
 
-        return page
+        return contents
 
     def get_service(self) -> List[Dict[str, Any]]:
         if not self._enabled:
@@ -1542,7 +1480,7 @@ class DoubanUpcoming(_PluginBase):
         return {"code": 0, "data": {"url": url}}
 
     def __api_interest(self, douban_id: str = ""):
-        """处理'有兴趣'操作"""
+        """处理'有兴趣'操作：订阅后推送下一条"""
         if not douban_id:
             return {"code": 1, "message": "缺少douban_id参数"}
 
@@ -1563,7 +1501,6 @@ class DoubanUpcoming(_PluginBase):
 
         title = item.get("title", "")
         year = item.get("year", "")
-        actors = item.get("actors", "").split()
 
         logger.info(f"有兴趣: {title} ({year})")
 
@@ -1582,35 +1519,58 @@ class DoubanUpcoming(_PluginBase):
         }
         self._pushed_items = json.dumps(pushed, ensure_ascii=False)
 
-        # 尝试 TMDB 匹配
-        tmdb_matched = self.__try_tmdb_match(item)
-
-        if tmdb_matched:
-            # TMDB 匹配成功
-            tmdb_info = tmdb_matched
-            first_air_date = tmdb_info.get("first_air_date", "")
-
-            if first_air_date and len(first_air_date) >= 10:
-                # 有精确时间：添加订阅 + 日历
-                self.__subscribe_tmdb(tmdb_info)
-                self.__save_config()
-                return {"code": 0, "message": f"已通过TMDB订阅: {title}", "data": {"status": "subscribed", "tmdb": True}}
-            else:
-                # 无精确时间：保存到本地追踪
-                self.__add_tracking(item, tmdb_info)
-                self.__save_config()
-                return {"code": 0, "message": f"已加入追踪列表（等待精确时间）: {title}", "data": {"status": "tracking", "tmdb": True}}
+        # 检测是否已存在订阅，避免重复
+        if self.__check_subscription_exists(douban_id=douban_id, title=title):
+            logger.info(f"订阅已存在，跳过: {title}")
+            result = {"code": 0, "message": f"订阅已存在，跳过: {title}", "data": {"status": "already_subscribed"}}
         else:
-            # TMDB 匹配失败，尝试豆瓣订阅
-            douban_subscribed = self.__try_douban_subscribe(item)
-            if douban_subscribed:
-                self.__save_config()
-                return {"code": 0, "message": f"已通过豆瓣订阅: {title}", "data": {"status": "subscribed", "douban": True}}
+            # 尝试 TMDB 匹配
+            tmdb_matched = self.__try_tmdb_match(item)
+
+            if tmdb_matched:
+                tmdb_info = tmdb_matched
+                first_air_date = tmdb_info.get("first_air_date", "")
+
+                if first_air_date and len(first_air_date) >= 10:
+                    self.__subscribe_tmdb(tmdb_info)
+                    result = {"code": 0, "message": f"已通过TMDB订阅: {title}", "data": {"status": "subscribed", "tmdb": True}}
+                else:
+                    self.__add_tracking(item, tmdb_info)
+                    result = {"code": 0, "message": f"已加入追踪列表（等待精确时间）: {title}", "data": {"status": "tracking", "tmdb": True}}
             else:
-                # 豆瓣订阅也失败，保存到本地追踪
-                self.__add_tracking(item, None)
-                self.__save_config()
-                return {"code": 0, "message": f"已加入追踪列表（等待可订阅）: {title}", "data": {"status": "tracking", "tmdb": False}}
+                douban_subscribed = self.__try_douban_subscribe(item)
+                if douban_subscribed:
+                    result = {"code": 0, "message": f"已通过豆瓣订阅: {title}", "data": {"status": "subscribed", "douban": True}}
+                else:
+                    self.__add_tracking(item, None)
+                    result = {"code": 0, "message": f"已加入追踪列表（等待可订阅）: {title}", "data": {"status": "tracking", "tmdb": False}}
+
+        self.__save_config()
+
+        # 推送下一条（与 not_interest 逻辑一致）
+        next_item = None
+        for q in queue:
+            if q.get("douban_id") not in pushed:
+                next_item = q
+                break
+
+        if next_item:
+            self.__send_douban_notification(next_item)
+            pushed = json.loads(self._pushed_items or "{}")
+            pushed[next_item.get("douban_id")] = {
+                "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "interest": None,
+                "title": next_item.get("title", ""),
+                "douban_url": next_item.get("douban_url", ""),
+                "image_url": next_item.get("image_url", ""),
+                "rating": next_item.get("rating", ""),
+                "year": next_item.get("year", ""),
+                "genres": next_item.get("genres", ""),
+            }
+            self._pushed_items = json.dumps(pushed, ensure_ascii=False)
+            self.__save_config()
+
+        return result
 
     def __api_not_interest(self, douban_id: str = ""):
         """处理'无兴趣'操作"""
@@ -1727,15 +1687,16 @@ class DoubanUpcoming(_PluginBase):
 
         if action == "有兴趣" or action == "interest":
             result = self.__api_interest(douban_id)
-            self.post_message(
-                channel=channel,
-                mtype=NotificationType.Plugin,
-                title="处理完成",
-                text=result.get("message", "已标记为感兴趣"),
-                userid=userid,
-                original_message_id=original_message_id,
-                original_chat_id=original_chat_id
-            )
+            if result.get("code") != 0:
+                self.post_message(
+                    channel=channel,
+                    mtype=NotificationType.Plugin,
+                    title="处理失败",
+                    text=result.get("message", "操作失败"),
+                    userid=userid,
+                    original_message_id=original_message_id,
+                    original_chat_id=original_chat_id
+                )
         elif action == "无兴趣" or action == "not_interest":
             result = self.__api_not_interest(douban_id)
             # not_interest 会自动推送下一条通知
@@ -1752,6 +1713,28 @@ class DoubanUpcoming(_PluginBase):
             )
         else:
             logger.debug(f"未知的回调动作: {action}")
+
+    def __check_subscription_exists(self, douban_id: str = "", tmdb_id: int = None, title: str = "") -> bool:
+        """检测是否已存在订阅，避免重复订阅"""
+        try:
+            from app.db.subscribe_oper import SubscribeOper
+            sub_oper = SubscribeOper()
+            if douban_id:
+                exists = sub_oper.exists(doubanid=douban_id)
+                if exists:
+                    return True
+            if tmdb_id:
+                exists = sub_oper.exists(tmdbid=tmdb_id)
+                if exists:
+                    return True
+            if title:
+                exists = sub_oper.exists(name=title)
+                if exists:
+                    return True
+            return False
+        except Exception as e:
+            logger.debug(f"检查订阅是否存在失败: {e}")
+            return False
 
     def __try_tmdb_match(self, item: Dict) -> Optional[Dict]:
         """尝试通过标题+年份搜索TMDB，返回匹配结果字典"""
@@ -1814,15 +1797,21 @@ class DoubanUpcoming(_PluginBase):
             return None
 
     def __try_douban_subscribe(self, item: Dict) -> bool:
-        """尝试豆瓣订阅：通过 SubscribeChain 添加订阅"""
+        """尝试豆瓣订阅：通过 SubscribeChain 添加订阅（先检测是否已存在）"""
         try:
             douban_id = item.get("douban_id", "")
             title = item.get("title", "")
             year = item.get("year", "")
-            logger.info(f"尝试豆瓣订阅: {title} ({douban_id})")
 
             if not douban_id:
                 return False
+
+            # 检测是否已存在订阅
+            if self.__check_subscription_exists(douban_id=douban_id, title=title):
+                logger.info(f"豆瓣订阅已存在，跳过: {title}")
+                return True  # 已存在也算成功
+
+            logger.info(f"尝试豆瓣订阅: {title} ({douban_id})")
 
             try:
                 from app.chain.subscribe import SubscribeChain
@@ -2114,13 +2103,19 @@ class DoubanUpcoming(_PluginBase):
             return ""
 
     def __subscribe_tmdb(self, tmdb_info: Dict):
-        """添加TMDB订阅"""
+        """添加TMDB订阅（先检测是否已存在）"""
         try:
             tmdb_id = tmdb_info.get("id")
             title = tmdb_info.get("name") or tmdb_info.get("title", "")
             media_type = MediaType.TV if tmdb_info.get("first_air_date") else MediaType.MOVIE
             first_air_date = tmdb_info.get("first_air_date", "") or tmdb_info.get("release_date", "")
             year = first_air_date[:4] if first_air_date else ""
+
+            # 检测是否已存在订阅
+            if self.__check_subscription_exists(tmdb_id=tmdb_id, title=title):
+                logger.info(f"TMDB订阅已存在，跳过: {title}")
+                return
+
             logger.info(f"添加TMDB订阅: {title} (tmdb_id={tmdb_id}, type={media_type.value})")
 
             # 调用 SubscribeChain 添加订阅
