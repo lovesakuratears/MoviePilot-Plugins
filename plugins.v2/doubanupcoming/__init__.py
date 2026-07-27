@@ -416,7 +416,7 @@ class DoubanUpcoming(_PluginBase):
 
     def get_page(self) -> List[dict]:
         """
-        拼装插件详情页面，完全对齐 doubansync 样式
+        拼装插件详情页面：网格布局，感兴趣/不感兴趣分组，不感兴趣折叠
         """
         pushed = {}
         try:
@@ -435,121 +435,195 @@ class DoubanUpcoming(_PluginBase):
                 }
             ]
 
-        # 数据按时间降序排序
-        items = []
+        interested_items = []
+        not_interested_items = []
+
         for douban_id, info in pushed.items():
-            items.append({
+            entry = {
                 "douban_id": douban_id,
                 "title": info.get("title", ""),
                 "time": info.get("time", ""),
+                "release_date": info.get("release_date", ""),
                 "interest": info.get("interest"),
                 "image_url": info.get("image_url", ""),
                 "genres": info.get("genres", ""),
-            })
-        items.sort(key=lambda x: x.get("time", ""), reverse=True)
+            }
+            if info.get("interest") is True:
+                interested_items.append(entry)
+            elif info.get("interest") is False:
+                not_interested_items.append(entry)
 
-        # 拼装页面
-        contents = []
-        for item in items:
-            title = item.get("title")
-            poster = item.get("image_url")
-            douban_id = item.get("douban_id")
-            time_str = item.get("time")
+        interested_items.sort(key=lambda x: x.get("time", ""), reverse=True)
+        not_interested_items.sort(key=lambda x: x.get("time", ""), reverse=True)
+
+        def build_card(item):
+            """构建单张水平卡片"""
+            title = item.get("title", "")
+            douban_id = item.get("douban_id", "")
+            image_url = item.get("image_url", "")
             genres = item.get("genres", "")
+            release_date = item.get("release_date", "")
+            time_str = item.get("time", "")
+            # 优先显示上映时间
+            display_time = release_date if release_date else time_str
             interest = item.get("interest")
             action = "感兴趣" if interest is True else "不感兴趣" if interest is False else ""
 
-            contents.append(
-                {
-                    'component': 'VCard',
+            return {
+                'component': 'VCard',
+                'content': [
+                    {
+                        "component": "VDialogCloseBtn",
+                        "props": {
+                            'innerClass': 'absolute top-0 right-0',
+                        },
+                        'events': {
+                            'click': {
+                                'api': 'plugin/DoubanUpcoming/delete_history_item',
+                                'method': 'get',
+                                'params': {
+                                    'douban_id': douban_id,
+                                    'apikey': settings.API_TOKEN
+                                }
+                            }
+                        },
+                    },
+                    {
+                        'component': 'div',
+                        'props': {
+                            'class': 'd-flex justify-space-start flex-nowrap flex-row',
+                        },
+                        'content': [
+                            {
+                                'component': 'div',
+                                'content': [
+                                    {
+                                        'component': 'VImg',
+                                        'props': {
+                                            'src': image_url,
+                                            'height': 120,
+                                            'width': 80,
+                                            'aspect-ratio': '2/3',
+                                            'class': 'object-cover shadow ring-gray-500',
+                                            'cover': True
+                                        }
+                                    }
+                                ]
+                            },
+                            {
+                                'component': 'div',
+                                'content': [
+                                    {
+                                        'component': 'VCardTitle',
+                                        'props': {
+                                            'class': 'ps-1 pe-5 break-words whitespace-break-spaces'
+                                        },
+                                        'content': [
+                                            {
+                                                'component': 'a',
+                                                'props': {
+                                                    'href': f"https://movie.douban.com/subject/{douban_id}",
+                                                    'target': '_blank'
+                                                },
+                                                'text': title
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        'component': 'VCardText',
+                                        'props': {
+                                            'class': 'pa-0 px-2'
+                                        },
+                                        'text': f'类型：{genres}' if genres else '类型：暂无'
+                                    },
+                                    {
+                                        'component': 'VCardText',
+                                        'props': {
+                                            'class': 'pa-0 px-2'
+                                        },
+                                        'text': f'上映：{display_time}' if display_time else '上映：暂无'
+                                    },
+                                    {
+                                        'component': 'VCardText',
+                                        'props': {
+                                            'class': 'pa-0 px-2'
+                                        },
+                                        'text': f'操作：{action}' if action else ''
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            }
+
+        def build_grid(items):
+            """将卡片排列成网格，每行最多4个（lg=3即4列）"""
+            rows = []
+            for i in range(0, len(items), 4):
+                row_items = items[i:i + 4]
+                cols = []
+                for item in row_items:
+                    cols.append({
+                        'component': 'VCol',
+                        'props': {'cols': 12, 'sm': 6, 'md': 4, 'lg': 3},
+                        'content': [build_card(item)]
+                    })
+                rows.append({
+                    'component': 'VRow',
+                    'content': cols
+                })
+            return rows
+
+        page = []
+
+        # 感兴趣 section
+        if interested_items:
+            page.append({
+                'component': 'div',
+                'props': {'class': 'd-flex align-center mb-4'},
+                'content': [
+                    {'component': 'VIcon', 'props': {'icon': 'mdi-heart', 'color': 'red', 'size': '24', 'class': 'me-2'}},
+                    {'component': 'div', 'props': {'class': 'text-h5 font-weight-bold'}, 'text': '感兴趣'},
+                    {'component': 'VChip', 'props': {'size': 'small', 'class': 'ms-2', 'color': 'primary', 'variant': 'tonal'}, 'text': f'{len(interested_items)} 条'},
+                ]
+            })
+            page.extend(build_grid(interested_items))
+
+        # 不感兴趣 section（折叠隐藏）
+        if not_interested_items:
+            page.append({
+                'component': 'div',
+                'props': {'class': 'd-flex align-center mb-4 mt-6'},
+                'content': [
+                    {'component': 'VIcon', 'props': {'icon': 'mdi-heart-off', 'color': 'grey', 'size': '24', 'class': 'me-2'}},
+                    {'component': 'div', 'props': {'class': 'text-h5 font-weight-bold'}, 'text': '不感兴趣'},
+                    {'component': 'VChip', 'props': {'size': 'small', 'class': 'ms-2', 'variant': 'tonal'}, 'text': f'{len(not_interested_items)} 条'},
+                ]
+            })
+            page.append({
+                'component': 'VExpansionPanels',
+                'props': {'variant': 'accordion'},
+                'content': [{
+                    'component': 'VExpansionPanel',
                     'content': [
                         {
-                            "component": "VDialogCloseBtn",
-                            "props": {
-                                'innerClass': 'absolute top-0 right-0',
-                            },
-                            'events': {
-                                'click': {
-                                    'api': 'plugin/DoubanUpcoming/delete_history_item',
-                                    'method': 'get',
-                                    'params': {
-                                        'douban_id': douban_id,
-                                        'apikey': settings.API_TOKEN
-                                    }
-                                }
-                            },
+                            'component': 'VExpansionPanelTitle',
+                            'props': {'class': 'px-0'},
+                            'content': [
+                                {'component': 'span', 'props': {'class': 'text-body-2 text-medium-emphasis'}, 'text': '点击展开查看'}
+                            ]
                         },
                         {
-                            'component': 'div',
-                            'props': {
-                                'class': 'd-flex justify-space-start flex-nowrap flex-row',
-                            },
-                            'content': [
-                                {
-                                    'component': 'div',
-                                    'content': [
-                                        {
-                                            'component': 'VImg',
-                                            'props': {
-                                                'src': poster,
-                                                'height': 120,
-                                                'width': 80,
-                                                'aspect-ratio': '2/3',
-                                                'class': 'object-cover shadow ring-gray-500',
-                                                'cover': True
-                                            }
-                                        }
-                                    ]
-                                },
-                                {
-                                    'component': 'div',
-                                    'content': [
-                                        {
-                                            'component': 'VCardTitle',
-                                            'props': {
-                                                'class': 'ps-1 pe-5 break-words whitespace-break-spaces'
-                                            },
-                                            'content': [
-                                                {
-                                                    'component': 'a',
-                                                    'props': {
-                                                        'href': f"https://movie.douban.com/subject/{douban_id}",
-                                                        'target': '_blank'
-                                                    },
-                                                    'text': title
-                                                }
-                                            ]
-                                        },
-                                        {
-                                            'component': 'VCardText',
-                                            'props': {
-                                                'class': 'pa-0 px-2'
-                                            },
-                                            'text': f'类型：{genres}' if genres else '类型：暂无'
-                                        },
-                                        {
-                                            'component': 'VCardText',
-                                            'props': {
-                                                'class': 'pa-0 px-2'
-                                            },
-                                            'text': f'时间：{time_str}'
-                                        },
-                                        {
-                                            'component': 'VCardText',
-                                            'props': {
-                                                'class': 'pa-0 px-2'
-                                            },
-                                            'text': f'操作：{action}' if action else ''
-                                        }
-                                    ]
-                                }
-                            ]
+                            'component': 'VExpansionPanelText',
+                            'props': {'class': 'px-0 pb-0'},
+                            'content': build_grid(not_interested_items)
                         }
                     ]
-                }
-            )
+                }]
+            })
 
-        return contents
+        return page
 
     def get_service(self) -> List[Dict[str, Any]]:
         if not self._enabled:
