@@ -10,6 +10,7 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.date import DateTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
+from app.core.config import settings
 from app.core.event import eventmanager, Event
 from app.log import logger
 from app.plugins import _PluginBase
@@ -414,11 +415,26 @@ class DoubanUpcoming(_PluginBase):
         }
 
     def get_page(self) -> List[dict]:
+        """
+        拼装插件详情页面，参考 doubansync 样式：扁平列表 + 水平卡片布局
+        """
         pushed = {}
         try:
             pushed = json.loads(self._pushed_items or "{}")
         except Exception:
             pass
+
+        # 空状态
+        if not pushed:
+            return [
+                {
+                    'component': 'div',
+                    'text': '暂无数据',
+                    'props': {
+                        'class': 'text-center',
+                    }
+                }
+            ]
 
         interested_items = []
         not_interested_items = []
@@ -445,188 +461,154 @@ class DoubanUpcoming(_PluginBase):
         interested_items.sort(key=lambda x: x.get("time", ""), reverse=True)
         not_interested_items.sort(key=lambda x: x.get("time", ""), reverse=True)
 
-        page = []
-
-        if not pushed:
-            page.append({
-                'component': 'VCard',
-                'props': {'variant': 'tonal'},
-                'content': [{
-                    'component': 'VCardText',
-                    'props': {'class': 'pa-8 text-center'},
-                    'content': [
-                        {'component': 'VIcon', 'props': {'icon': 'mdi-movie-open', 'size': '48', 'class': 'mb-2 text-primary'}},
-                        {'component': 'div', 'props': {'class': 'text-h6 mb-1'}, 'text': '暂无推送记录'},
-                        {'component': 'div', 'props': {'class': 'text-body-2 text-medium-emphasis'}, 'text': '开启插件后，将在推送时间自动推送豆瓣影视信息'},
-                    ]
-                }]
-            })
-            return page
-
-        def build_grid_card(item):
+        def build_card(item):
+            """构建单张水平卡片（参考 doubansync 样式）"""
             title = item.get("title", "")
-            douban_url = item.get("douban_url", "")
+            douban_id = item.get("douban_id", "")
             image_url = item.get("image_url", "")
-            rating = item.get("rating", "")
             genres = item.get("genres", "")
             release_date = item.get("release_date", "")
-            display_time = release_date if release_date else item.get("time", "").split(' ')[0]
+            push_time = item.get("time", "").split(' ')[0] if item.get("time") else ""
+            display_time = release_date if release_date else push_time
+            interest = item.get("interest")
+            action = "感兴趣" if interest is True else "不感兴趣" if interest is False else ""
 
-            card = {
+            return {
                 'component': 'VCard',
-                'props': {
-                    'class': 'mb-3 overflow-hidden',
-                    'rounded': 'lg',
-                    'elevation': 2,
-                },
                 'content': [
                     {
+                        "component": "VDialogCloseBtn",
+                        "props": {
+                            'innerClass': 'absolute top-0 right-0',
+                        },
+                        'events': {
+                            'click': {
+                                'api': 'plugin/DoubanUpcoming/delete_history_item',
+                                'method': 'get',
+                                'params': {
+                                    'douban_id': douban_id,
+                                    'apikey': settings.API_TOKEN
+                                }
+                            }
+                        },
+                    },
+                    {
                         'component': 'div',
-                        'props': {'class': 'relative'},
+                        'props': {
+                            'class': 'd-flex justify-space-start flex-nowrap flex-row',
+                        },
                         'content': [
                             {
-                                'component': 'VImg',
-                                'props': {
-                                    'src': image_url if image_url else '',
-                                    'alt': title,
-                                    'aspect': '1.4',
-                                    'cover': True,
-                                }
-                            },
-                            {
                                 'component': 'div',
-                                'props': {'class': 'absolute top-0 right-0 p-2'},
                                 'content': [
                                     {
-                                        'component': 'VBtn',
+                                        'component': 'VImg',
                                         'props': {
-                                            'size': 'small',
-                                            'icon': 'mdi-close',
-                                            'color': 'grey',
-                                            'variant': 'text',
-                                            'class': 'bg-white/80 rounded-full',
+                                            'src': image_url,
+                                            'height': 120,
+                                            'width': 80,
+                                            'aspect-ratio': '2/3',
+                                            'class': 'object-cover shadow ring-gray-500',
+                                            'cover': True
                                         }
                                     }
                                 ]
                             },
                             {
                                 'component': 'div',
-                                'props': {'class': 'absolute bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-black/80 to-transparent'},
                                 'content': [
                                     {
-                                        'component': 'div',
-                                        'props': {'class': 'text-white text-sm font-medium truncate'},
-                                        'text': title
-                                    },
-                                    {
-                                        'component': 'div',
-                                        'props': {'class': 'text-white/70 text-xs mt-1'},
-                                        'text': f'类型: {genres}' if genres else '类型: 暂无'
-                                    },
-                                    {
-                                        'component': 'div',
-                                        'props': {'class': 'text-white/70 text-xs'},
-                                        'text': f'时间: {display_time}' if display_time else '时间: 暂无'
-                                    },
-                                ]
-                            },
-                        ]
-                    },
-                    {
-                        'component': 'div',
-                        'props': {'class': 'p-2 bg-white'},
-                        'content': [
-                            {
-                                'component': 'VBtn',
-                                'props': {
-                                    'size': 'small',
-                                    'color': 'primary',
-                                    'variant': 'elevated',
-                                    'class': 'w-full',
-                                    'href': douban_url,
-                                    'target': '_blank',
-                                },
-                                'text': '订阅'
-                            }
-                        ]
-                    },
-                ]
-            }
-            return card
-
-        page.append({
-            'component': 'VRow',
-            'content': [
-                {
-                    'component': 'VCol',
-                    'props': {'cols': 12},
-                    'content': [
-                        {
-                            'component': 'div',
-                            'props': {'class': 'd-flex align-center mb-4'},
-                            'content': [
-                                {'component': 'VIcon', 'props': {'icon': 'mdi-heart', 'color': 'red', 'size': '24', 'class': 'me-2'}},
-                                {'component': 'div', 'props': {'class': 'text-h5 font-weight-bold'}, 'text': f'感兴趣'},
-                                {'component': 'VChip', 'props': {'size': 'small', 'class': 'ms-2', 'color': 'primary', 'variant': 'tonal'}, 'text': f'{len(interested_items)} 条'},
-                            ]
-                        },
-                        {
-                            'component': 'VGrid',
-                            'props': {'cols': {'xs': 2, 'sm': 3, 'md': 4, 'lg': 5, 'xl': 6}},
-                            'content': [build_grid_card(item) for item in interested_items]
-                        }
-                    ]
-                }
-            ]
-        })
-
-        if not_interested_items:
-            page.append({
-                'component': 'VRow',
-                'content': [
-                    {
-                        'component': 'VCol',
-                        'props': {'cols': 12},
-                        'content': [
-                            {
-                                'component': 'div',
-                                'props': {'class': 'd-flex align-center mb-4 mt-6'},
-                                'content': [
-                                    {'component': 'VIcon', 'props': {'icon': 'mdi-heart-off', 'color': 'grey', 'size': '24', 'class': 'me-2'}},
-                                    {'component': 'div', 'props': {'class': 'text-h5 font-weight-bold'}, 'text': f'不感兴趣'},
-                                    {'component': 'VChip', 'props': {'size': 'small', 'class': 'ms-2', 'variant': 'tonal'}, 'text': f'{len(not_interested_items)} 条'},
-                                ]
-                            },
-                            {
-                                'component': 'VExpansionPanels',
-                                'props': {'variant': 'accordion'},
-                                'content': [{
-                                    'component': 'VExpansionPanel',
-                                    'content': [
-                                        {
-                                            'component': 'VExpansionPanelTitle',
-                                            'props': {'class': 'px-0'},
-                                            'content': [
-                                                {'component': 'span', 'props': {'class': 'text-body-2 text-medium-emphasis'}, 'text': '点击展开查看'}
-                                            ]
+                                        'component': 'VCardTitle',
+                                        'props': {
+                                            'class': 'ps-1 pe-5 break-words whitespace-break-spaces'
                                         },
-                                        {
-                                            'component': 'VExpansionPanelText',
-                                            'props': {'class': 'px-0 pb-0'},
-                                            'content': [
-                                                {
-                                                    'component': 'VGrid',
-                                                    'props': {'cols': {'xs': 2, 'sm': 3, 'md': 4, 'lg': 5, 'xl': 6}},
-                                                    'content': [build_grid_card(item) for item in not_interested_items]
-                                                }
-                                            ]
-                                        }
-                                    ]
-                                }]
+                                        'content': [
+                                            {
+                                                'component': 'a',
+                                                'props': {
+                                                    'href': f"https://movie.douban.com/subject/{douban_id}",
+                                                    'target': '_blank'
+                                                },
+                                                'text': title
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        'component': 'VCardText',
+                                        'props': {
+                                            'class': 'pa-0 px-2'
+                                        },
+                                        'text': f'类型：{genres}' if genres else '类型：暂无'
+                                    },
+                                    {
+                                        'component': 'VCardText',
+                                        'props': {
+                                            'class': 'pa-0 px-2'
+                                        },
+                                        'text': f'时间：{display_time}' if display_time else '时间：暂无'
+                                    },
+                                    {
+                                        'component': 'VCardText',
+                                        'props': {
+                                            'class': 'pa-0 px-2'
+                                        },
+                                        'text': f'操作：{action}' if action else ''
+                                    }
+                                ]
                             }
                         ]
                     }
                 ]
+            }
+
+        # 扁平列表，不使用 VRow/VCol 包裹
+        page = []
+
+        # 感兴趣 section
+        if interested_items:
+            page.append({
+                'component': 'div',
+                'props': {'class': 'd-flex align-center mb-4'},
+                'content': [
+                    {'component': 'VIcon', 'props': {'icon': 'mdi-heart', 'color': 'red', 'size': '24', 'class': 'me-2'}},
+                    {'component': 'div', 'props': {'class': 'text-h5 font-weight-bold'}, 'text': '感兴趣'},
+                    {'component': 'VChip', 'props': {'size': 'small', 'class': 'ms-2', 'color': 'primary', 'variant': 'tonal'}, 'text': f'{len(interested_items)} 条'},
+                ]
+            })
+            for item in interested_items:
+                page.append(build_card(item))
+
+        # 不感兴趣 section
+        if not_interested_items:
+            page.append({
+                'component': 'div',
+                'props': {'class': 'd-flex align-center mb-4 mt-6'},
+                'content': [
+                    {'component': 'VIcon', 'props': {'icon': 'mdi-heart-off', 'color': 'grey', 'size': '24', 'class': 'me-2'}},
+                    {'component': 'div', 'props': {'class': 'text-h5 font-weight-bold'}, 'text': '不感兴趣'},
+                    {'component': 'VChip', 'props': {'size': 'small', 'class': 'ms-2', 'variant': 'tonal'}, 'text': f'{len(not_interested_items)} 条'},
+                ]
+            })
+            page.append({
+                'component': 'VExpansionPanels',
+                'props': {'variant': 'accordion'},
+                'content': [{
+                    'component': 'VExpansionPanel',
+                    'content': [
+                        {
+                            'component': 'VExpansionPanelTitle',
+                            'props': {'class': 'px-0'},
+                            'content': [
+                                {'component': 'span', 'props': {'class': 'text-body-2 text-medium-emphasis'}, 'text': '点击展开查看'}
+                            ]
+                        },
+                        {
+                            'component': 'VExpansionPanelText',
+                            'props': {'class': 'px-0 pb-0'},
+                            'content': [build_card(item) for item in not_interested_items]
+                        }
+                    ]
+                }]
             })
 
         return page
@@ -699,6 +681,14 @@ class DoubanUpcoming(_PluginBase):
                 "auth": "bear",
                 "summary": "清除历史记录",
                 "description": "清空所有已推送记录",
+            },
+            {
+                "path": "/delete_history_item",
+                "endpoint": DoubanUpcoming.__api_delete_history_item,
+                "methods": ["GET"],
+                "auth": "bear",
+                "summary": "删除单条历史记录",
+                "description": "删除指定豆瓣ID的推送历史记录",
             },
             {
                 "path": "/detail",
@@ -1529,6 +1519,21 @@ class DoubanUpcoming(_PluginBase):
         self._current_queue = "[]"
         self.__save_config()
         return {"code": 0, "message": "历史记录已清除"}
+
+    def __api_delete_history_item(self, douban_id: str = ""):
+        """删除单条历史记录"""
+        if not douban_id:
+            return {"code": 1, "message": "缺少douban_id参数"}
+        try:
+            pushed = json.loads(self._pushed_items or "{}")
+            if douban_id in pushed:
+                del pushed[douban_id]
+                self._pushed_items = json.dumps(pushed, ensure_ascii=False)
+                self.__save_config()
+                return {"code": 0, "message": "已删除"}
+            return {"code": 1, "message": "未找到该记录"}
+        except Exception as e:
+            return {"code": 1, "message": f"删除失败：{str(e)}"}
 
     def __api_detail(self, douban_id: str = ""):
         if not douban_id:
