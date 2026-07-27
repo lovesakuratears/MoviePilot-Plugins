@@ -253,26 +253,23 @@ MoviePilot 缺少面向豆瓣影视的"一条龙"订阅推送功能。利用 RSS
 | 清除历史记录 | VSwitch | false | 开启后保存设置即清除所有历史记录，执行后自动关闭并保存 |
 | 立即执行一次 | VSwitch | false | 开启后保存设置即触发首次推送，执行后自动关闭 |
 
-### Requirement: 历史记录页面（网格卡片布局）
-系统 SHALL 提供 `get_page()` 页面展示历史记录，参考官方豆瓣想看插件样式，使用网格卡片布局。
+### Requirement: 历史记录页面（水平卡片布局）
+系统 SHALL 提供 `get_page()` 页面展示历史记录，参考官方豆瓣想看（doubansync）插件样式，使用水平卡片布局。
 
-#### Scenario: 感兴趣记录展示（网格卡片）
+#### Scenario: 感兴趣记录展示（水平卡片）
 - **WHEN** 用户查看历史记录页面
-- **THEN** 显示所有"感兴趣"的记录，使用 `VGrid` 响应式网格布局
-- **AND** xs 屏幕每行 2 列、sm 3 列、md 4 列、lg 5 列、xl 6 列
+- **THEN** 显示所有"感兴趣"的记录，使用 `VCard` 水平卡片（列表形式，每行一张卡片）
 - **AND** 每张卡片包含：
-  - 海报缩略图（`VImg`，aspect 1.4）
-  - 标题（白色字体，海报底部覆盖）
-  - 类型（白色半透明）
-  - 时间（白色半透明，优先显示预计播出日期，否则显示推送时间）
-  - 右上角关闭按钮
-  - 底部"订阅"按钮（跳转豆瓣链接）
+  - 左上角 `VDialogCloseBtn` 关闭按钮（点击调用 `/delete_history_item` API 删除单条记录）
+  - 水平布局 `d-flex flex-row`：
+    - 左侧：海报缩略图（`VImg`，height=120, width=80, aspect-ratio=2/3）
+    - 右侧：标题（`VCardTitle`，可点击跳转豆瓣链接）、类型（`VCardText`）、时间（`VCardText`，优先预计播出日期）、操作（`VCardText`，显示"感兴趣"/"不感兴趣"）
 
 #### Scenario: 不感兴趣记录折叠
 - **WHEN** 用户查看历史记录页面
 - **THEN** "不感兴趣"的记录默认折叠在 `VExpansionPanel` 中
 - **AND** 用户可点击展开查看
-- **AND** 展开后也以网格卡片形式展示
+- **AND** 展开后也以水平卡片形式展示
 
 #### Scenario: 历史记录为空
 - **WHEN** 没有任何历史推送记录
@@ -372,15 +369,39 @@ MoviePilot 缺少面向豆瓣影视的"一条龙"订阅推送功能。利用 RSS
 - [x] 通知按钮点击无反应：兼容多种 callback_data 格式
 - [x] 通知一次性推送两条：立即执行时不再添加首次推送定时任务
 - [x] 清除历史记录开关不恢复默认：清除后调用 `__save_config()` 持久化
-- [x] UI 风格：使用网格卡片布局（VGrid + VCard），参考官方豆瓣想看插件
+- [x] UI 风格：使用水平卡片布局（VCard + flex-row），参考官方 doubansync 插件
 - [x] 通知格式：评分行由播放平台代替（带 ✨ 前缀），保留简介；链接优先使用 TMDB 链接，海报优先使用 TMDB 海报
 
 ## 版本历史
 
+### v1.9.0 (2026-07-27)
+- TMDB 匹配切换为官方 MediaChain API（`get_tmdbinfo_by_doubanid` + `recognize_media`），参照 doubansync 实现
+- 元数据获取优先 TMDB 官方 API：海报、简介、播出日期、集数、季数、单集片长
+- 豆瓣 HTML 抓取降级为备用方案（仅补充 TMDB 不提供的评分、导演、演员、中文类型）
+- `__try_tmdb_match` 重构：MediaChain 优先 → TmdbChain 回退
+- `__fetch_douban_detail` 重构：TMDB 元数据优先 → 豆瓣抓取回退
+
+### v1.8.1
+- 网格布局4列（VRow+VCol lg=3）
+- 恢复感兴趣/不感兴趣分组标题
+- 不感兴趣折叠隐藏（VExpansionPanels）
+- 时间显示上映日期
+
+### v1.8.0
+- UI 对齐 doubansync（扁平列表，移除分组标题）
+- 有兴趣后自动推送下一条
+- 订阅成功不弹通知，仅失败时提示
+- 新增订阅去重检测（`__check_subscription_exists`，避免 TMDB+豆瓣重复订阅）
+
+### v1.7.0
+- 修复插件首页 UI：参考 doubansync 的 `__init__.py` 重写布局
+- 移除 VRow/VCol 包裹，空状态改为简洁 `div+text-center`
+
 ### v1.6.0 (2026-07-27)
 - 修复清除历史记录后设置开关不恢复默认状态
 - 修复通知一次性推送两条（立即执行与定时任务重复）
-- 重构首页UI为网格卡片布局（参考官方豆瓣想看插件样式）
+- 重构首页UI为水平卡片布局（参考 doubansync 插件样式：VCard + flex-row + VDialogCloseBtn）
+- 新增单条历史记录删除 API（`/delete_history_item`）
 - 时间显示优先显示预计播出日期
 - 通知格式调整：评分行由播放平台代替（带 ✨ 前缀），保留简介
 - 通知链接优先使用 TMDB 链接（无则豆瓣）

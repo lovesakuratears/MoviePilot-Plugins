@@ -125,3 +125,29 @@
 - [x] 通知链接优先使用 TMDB 链接（无则豆瓣）
 - [x] 通知海报优先使用 TMDB 海报（无则豆瓣）
 - [x] `package.v2.json`（插件目录 + 根目录）与 `plugin_version` 同步更新到 1.6.0
+
+## v1.7.0 UI 对齐 doubansync
+- [x] 插件首页 UI 参考 doubansync 的 `__init__.py` 重写
+- [x] 移除 VRow/VCol 包裹，空状态改为简洁 `div+text-center`
+- [x] 版本更新至 v1.7.0
+
+## v1.8.0 交互优化
+- [x] UI 扁平列表，移除分组标题
+- [x] 有兴趣后自动推送下一条
+- [x] 订阅成功不弹通知，仅失败时提示
+- [x] 新增 `__check_subscription_exists` 订阅去重检测
+- [x] 版本更新至 v1.8.0
+
+## v1.8.1 网格布局与分组
+- [x] 网格布局4列（VRow+VCol lg=3）
+- [x] 恢复感兴趣/不感兴趣分组标题
+- [x] 不感兴趣折叠隐藏（VExpansionPanels）
+- [x] 时间显示上映日期
+- [x] 版本更新至 v1.8.1
+
+## v1.9.0 官方 API 切换
+- [x] `__try_tmdb_match` 优先使用 MediaChain API（`get_tmdbinfo_by_doubanid` + `recognize_media`）
+- [x] `__fetch_douban_detail` 优先从 TMDB 获取元数据（海报/简介/日期/集数/季数/片长）
+- [x] 豆瓣 HTML 抓取降级为备用（仅补充评分/导演/演员/中文类型）
+- [x] TmdbChain 退到回退方案
+- [x] 版本更新至 v1.9.0

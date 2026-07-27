@@ -21,7 +21,7 @@ class DoubanUpcoming(_PluginBase):
     plugin_name = "刷豆瓣助手"
     plugin_desc = "省去打开豆瓣的过程，提供一条龙订阅推送服务。定时获取豆瓣即将播出/热门影视榜单，支持通过豆瓣UID获取想看列表并自动订阅未上映条目。"
     plugin_icon = "douban.png"
-    plugin_version = "1.8.1"
+    plugin_version = "1.9.0"
     plugin_author = "lovesakuratears"
     author_url = "https://github.com/lovesakuratears/MoviePilot-Plugins"
     plugin_config_prefix = "doubanupcoming_"
@@ -1069,7 +1069,7 @@ class DoubanUpcoming(_PluginBase):
         return results
 
     def __fetch_douban_detail(self, douban_id: str) -> Dict[str, Any]:
-        """抓取豆瓣页面获取海报、评分、集数、单集片长、精确播出日期等补充数据"""
+        """获取影视详情：优先从 TMDB 官方 API 获取元数据，豆瓣 HTML 抓取仅作备用（参照 doubansync）"""
         detail = {
             "image_url": "",
             "rating": "",
@@ -1085,6 +1085,37 @@ class DoubanUpcoming(_PluginBase):
         if not douban_id:
             return detail
 
+        # --- 优先方案：从 TMDB 获取元数据（参照 doubansync 的 mediainfo.get_poster_image()） ---
+        try:
+            tmdb_info = self.__try_tmdb_match({"douban_id": douban_id})
+            if tmdb_info:
+                # 海报
+                if tmdb_info.get("poster_path"):
+                    detail["image_url"] = f"https://image.tmdb.org/t/p/w500{tmdb_info.get('poster_path')}"
+                # 简介
+                if tmdb_info.get("overview"):
+                    detail["summary"] = tmdb_info["overview"][:500]
+                # 播出日期
+                first_air = tmdb_info.get("first_air_date", "") or ""
+                if first_air and len(first_air) >= 10:
+                    detail["release_date"] = first_air
+                # 集数/季数（TMDB 返回的可能是完整 media info，尝试提取）
+                if tmdb_info.get("number_of_episodes"):
+                    detail["episode_count"] = str(tmdb_info["number_of_episodes"])
+                if tmdb_info.get("number_of_seasons"):
+                    detail["season_info"] = f"S{int(tmdb_info['number_of_seasons']):02d}"
+                if tmdb_info.get("episode_run_time"):
+                    runtimes = tmdb_info["episode_run_time"]
+                    if isinstance(runtimes, list) and runtimes:
+                        detail["episode_duration"] = str(runtimes[0])
+                    elif isinstance(runtimes, (int, float)):
+                        detail["episode_duration"] = str(runtimes)
+                # 类型（TMDB 返回的是 genre_ids 或 genres 列表，后续从豆瓣补充中文名）
+                logger.debug(f"从TMDB获取到 {douban_id} 的元数据: date={detail['release_date']}, episodes={detail['episode_count']}")
+        except Exception as e:
+            logger.debug(f"从TMDB获取元数据失败 ({douban_id}): {e}")
+
+        # --- 回退方案：从豆瓣 HTML 补充 TMDB 缺失的数据 ---
         url = f"https://movie.douban.com/subject/{douban_id}/"
         try:
             headers = {
@@ -1094,79 +1125,86 @@ class DoubanUpcoming(_PluginBase):
             resp.raise_for_status()
             html = resp.text
 
-            # 提取海报图片
-            img_match = re.search(r'<img\s+[^>]*src="([^"]+)"[^>]*title="点击看更多海报"', html)
-            if not img_match:
-                img_match = re.search(r'<a\s+class="nbgnbg"[^>]*>\s*<img\s+src="([^"]+)"', html)
-            if img_match:
-                detail["image_url"] = img_match.group(1)
+            # 海报（TMDB 未获取到时从豆瓣补充）
+            if not detail["image_url"]:
+                img_match = re.search(r'<img\s+[^>]*src="([^"]+)"[^>]*title="点击看更多海报"', html)
+                if not img_match:
+                    img_match = re.search(r'<a\s+class="nbgnbg"[^>]*>\s*<img\s+src="([^"]+)"', html)
+                if not img_match:
+                    img_match = re.search(r'<meta\s+property="og:image"\s+content="([^"]+)"', html)
+                if img_match:
+                    detail["image_url"] = img_match.group(1)
 
-            # 提取评分
+            # 评分（仅豆瓣有）
             rating_match = re.search(r'<strong\s+class="ll\s+rating_num"[^>]*>([\d.]+)</strong>', html)
             if rating_match:
                 detail["rating"] = rating_match.group(1)
 
-            # 提取简介
-            summary_match = re.search(r'<span\s+property="v:summary"[^>]*>(.*?)</span>', html, re.DOTALL)
-            if not summary_match:
-                summary_match = re.search(r'<span\s+class="all\s+hidden">(.*?)</span>', html, re.DOTALL)
-            if not summary_match:
-                summary_match = re.search(r'<div\s+id="link-report"[^>]*>.*?<span[^>]*>(.*?)</span>', html, re.DOTALL)
-            if summary_match:
-                summary = re.sub(r'<[^>]+>', '', summary_match.group(1)).strip()
-                detail["summary"] = summary[:500] if summary else ""
+            # 简介（TMDB 未获取到时从豆瓣补充）
+            if not detail["summary"]:
+                summary_match = re.search(r'<span\s+property="v:summary"[^>]*>(.*?)</span>', html, re.DOTALL)
+                if not summary_match:
+                    summary_match = re.search(r'<span\s+class="all\s+hidden">(.*?)</span>', html, re.DOTALL)
+                if not summary_match:
+                    summary_match = re.search(r'<div\s+id="link-report"[^>]*>.*?<span[^>]*>(.*?)</span>', html, re.DOTALL)
+                if summary_match:
+                    summary = re.sub(r'<[^>]+>', '', summary_match.group(1)).strip()
+                    detail["summary"] = summary[:500] if summary else ""
 
-            # 提取类型/导演/演员等信息
+            # 详细信息区域（豆瓣特有：集数、片长、日期、类型、导演、演员）
             info_match = re.search(r'<div\s+id="info"[^>]*>(.*?)</div>', html, re.DOTALL)
             if info_match:
                 info_html = info_match.group(1)
 
-                # 提取集数
-                ep_match = re.search(r'集数:</span>\s*(\d+)', info_html)
-                if ep_match:
-                    detail["episode_count"] = ep_match.group(1)
+                # 集数（TMDB 未获取到时从豆瓣补充）
+                if not detail["episode_count"]:
+                    ep_match = re.search(r'集数:</span>\s*(\d+)', info_html)
+                    if ep_match:
+                        detail["episode_count"] = ep_match.group(1)
 
-                # 提取单集片长
-                dur_match = re.search(r'单集片长:</span>\s*(\d+)\s*分钟', info_html)
-                if dur_match:
-                    detail["episode_duration"] = dur_match.group(1)
+                # 单集片长（TMDB 未获取到时从豆瓣补充）
+                if not detail["episode_duration"]:
+                    dur_match = re.search(r'单集片长:</span>\s*(\d+)\s*分钟', info_html)
+                    if dur_match:
+                        detail["episode_duration"] = dur_match.group(1)
 
-                # 提取首播日期
-                date_match = re.search(r'首播:</span>\s*<span[^>]*>([^<]+)', info_html)
-                if not date_match:
-                    date_match = re.search(r'上映日期:</span>\s*<span[^>]*>([^<]+)', info_html)
-                if date_match:
-                    raw_date = date_match.group(1).strip()
-                    date_match2 = re.search(r'(\d{4}-\d{2}-\d{2})', raw_date)
-                    if date_match2:
-                        detail["release_date"] = date_match2.group(1)
-                    else:
-                        # 尝试解析 "2026-07-30(中国大陆)" 格式
-                        detail["release_date"] = raw_date
+                # 首播日期（TMDB 未获取到时从豆瓣补充）
+                if not detail["release_date"]:
+                    date_match = re.search(r'首播:</span>\s*<span[^>]*>([^<]+)', info_html)
+                    if not date_match:
+                        date_match = re.search(r'上映日期:</span>\s*<span[^>]*>([^<]+)', info_html)
+                    if date_match:
+                        raw_date = date_match.group(1).strip()
+                        date_match2 = re.search(r'(\d{4}-\d{2}-\d{2})', raw_date)
+                        if date_match2:
+                            detail["release_date"] = date_match2.group(1)
+                        else:
+                            detail["release_date"] = raw_date
 
-                # 提取季数
-                season_match = re.search(r'季数:</span>\s*(\d+)', info_html)
-                if season_match:
-                    detail["season_info"] = f"S{int(season_match.group(1)):02d}"
+                # 季数（TMDB 未获取到时从豆瓣补充）
+                if not detail["season_info"]:
+                    season_match = re.search(r'季数:</span>\s*(\d+)', info_html)
+                    if season_match:
+                        detail["season_info"] = f"S{int(season_match.group(1)):02d}"
 
-                # 提取类型
+                # 类型（豆瓣中文名优先，TMDB 的 genre_ids 不够直观）
                 genres_match = re.findall(r'<span\s+property="v:genre">([^<]+)</span>', info_html)
                 if genres_match:
                     detail["genres"] = " / ".join(genres_match)
 
-                # 提取导演
+                # 导演（仅豆瓣有）
                 dir_match = re.findall(r'<a\s+href="/celebrity/\d+/"[^>]*rel="v:directedBy"[^>]*>([^<]+)</a>', info_html)
                 if dir_match:
                     detail["director"] = " / ".join(dir_match)
 
-                # 提取主演
+                # 主演（仅豆瓣有）
                 actor_match = re.findall(r'<a\s+href="/celebrity/\d+/"[^>]*rel="v:starring"[^>]*>([^<]+)</a>', info_html)
                 if actor_match:
                     detail["actors"] = " / ".join(actor_match[:5])
 
-            logger.info(f"__fetch_douban_detail 获取到 {douban_id} 的补充数据: rating={detail['rating']}, episodes={detail['episode_count']}, date={detail['release_date']}")
+            logger.debug(f"__fetch_douban_detail 获取到 {douban_id} 的补充数据: rating={detail['rating']}, episodes={detail['episode_count']}, date={detail['release_date']}")
         except Exception as e:
-            logger.warning(f"__fetch_douban_detail 抓取失败 ({douban_id}): {e}")
+            logger.debug(f"__fetch_douban_detail 豆瓣抓取失败 ({douban_id}): {e}")
 
         return detail
 
@@ -1724,580 +1762,4 @@ class DoubanUpcoming(_PluginBase):
         return {"code": 0, "message": "已停止本轮推送"}
 
     @eventmanager.register(EventType.MessageAction)
-    def message_action(self, event: Event):
-        """处理消息按钮回调（有兴趣/无兴趣/停止）"""
-        event_data = event.event_data
-        if not event_data:
-            return
-
-        # 检查是否为本插件的回调
-        plugin_id = event_data.get("plugin_id")
-        if plugin_id != self.__class__.__name__:
-            return
-
-        # 获取回调数据
-        channel = event_data.get("channel")
-        source = event_data.get("source")
-        userid = event_data.get("userid")
-        original_message_id = event_data.get("original_message_id")
-        original_chat_id = event_data.get("original_chat_id")
-
-        callback_text = event_data.get("text", "")
-        logger.debug(f"收到消息按钮回调: {callback_text}")
-
-        # 解析 callback_data 格式: action|douban_id 或 [PLUGIN]DoubanUpcoming|action|douban_id
-        parts = callback_text.split("|")
-        if len(parts) < 2:
-            logger.warning(f"无法解析回调数据: {callback_text}")
-            return
-
-        # 处理带 [PLUGIN] 前缀的情况
-        if len(parts) >= 3 and parts[0].startswith("[PLUGIN]"):
-            action = parts[1]
-            douban_id = parts[2]
-        else:
-            action = parts[0]
-            douban_id = parts[1] if len(parts) > 1 else ""
-
-        if action == "有兴趣" or action == "interest":
-            result = self.__api_interest(douban_id)
-            if result.get("code") != 0:
-                self.post_message(
-                    channel=channel,
-                    mtype=NotificationType.Plugin,
-                    title="处理失败",
-                    text=result.get("message", "操作失败"),
-                    userid=userid,
-                    original_message_id=original_message_id,
-                    original_chat_id=original_chat_id
-                )
-        elif action == "无兴趣" or action == "not_interest":
-            result = self.__api_not_interest(douban_id)
-            # not_interest 会自动推送下一条通知
-        elif action == "停止" or action == "stop":
-            result = self.__api_stop(douban_id)
-            self.post_message(
-                channel=channel,
-                mtype=NotificationType.Plugin,
-                title="已停止推送",
-                text="本轮推送已停止，不再继续推送下一条。",
-                userid=userid,
-                original_message_id=original_message_id,
-                original_chat_id=original_chat_id
-            )
-        else:
-            logger.debug(f"未知的回调动作: {action}")
-
-    def __check_subscription_exists(self, douban_id: str = "", tmdb_id: int = None, title: str = "") -> bool:
-        """检测是否已存在订阅，避免重复订阅"""
-        try:
-            from app.db.subscribe_oper import SubscribeOper
-            sub_oper = SubscribeOper()
-            if douban_id:
-                exists = sub_oper.exists(doubanid=douban_id)
-                if exists:
-                    return True
-            if tmdb_id:
-                exists = sub_oper.exists(tmdbid=tmdb_id)
-                if exists:
-                    return True
-            if title:
-                exists = sub_oper.exists(name=title)
-                if exists:
-                    return True
-            return False
-        except Exception as e:
-            logger.debug(f"检查订阅是否存在失败: {e}")
-            return False
-
-    def __try_tmdb_match(self, item: Dict) -> Optional[Dict]:
-        """尝试通过标题+年份搜索TMDB，返回匹配结果字典"""
-        try:
-            title = item.get("title", "")
-            year = item.get("year", "")
-            douban_id = item.get("douban_id", "")
-
-            if not title:
-                return None
-
-            # 使用 TmdbChain
-            try:
-                from app.chain.tmdb import TmdbChain
-                tmdbchain = TmdbChain()
-            except Exception:
-                return None
-
-            # 优先通过豆瓣ID匹配
-            if douban_id:
-                try:
-                    tmdbinfo = tmdbchain.tmdb_info(doubanid=douban_id, mtype=MediaType.TV)
-                    if tmdbinfo:
-                        return tmdbinfo
-                    tmdbinfo = tmdbchain.tmdb_info(doubanid=douban_id, mtype=MediaType.MOVIE)
-                    if tmdbinfo:
-                        return tmdbinfo
-                except Exception:
-                    pass
-
-            # 按标题搜索TV
-            try:
-                results = tmdbchain.search_tv(title=title, year=year)
-                if results and results.get("results"):
-                    first = results["results"][0]
-                    result_year = (first.get("first_air_date", "") or "")[:4]
-                    if not year or result_year == str(year):
-                        return first
-                    if first.get("name", "") == title:
-                        return first
-            except Exception:
-                pass
-
-            # 按标题搜索Movie
-            try:
-                results = tmdbchain.search_movie(title=title, year=year)
-                if results and results.get("results"):
-                    first = results["results"][0]
-                    result_year = (first.get("release_date", "") or "")[:4]
-                    if not year or result_year == str(year):
-                        return first
-                    if first.get("title", "") == title:
-                        return first
-            except Exception:
-                pass
-
-            return None
-        except Exception as e:
-            logger.debug(f"TMDB匹配失败: {e}")
-            return None
-
-    def __try_douban_subscribe(self, item: Dict) -> bool:
-        """尝试豆瓣订阅：通过 SubscribeChain 添加订阅（先检测是否已存在）"""
-        try:
-            douban_id = item.get("douban_id", "")
-            title = item.get("title", "")
-            year = item.get("year", "")
-
-            if not douban_id:
-                return False
-
-            # 检测是否已存在订阅
-            if self.__check_subscription_exists(douban_id=douban_id, title=title):
-                logger.info(f"豆瓣订阅已存在，跳过: {title}")
-                return True  # 已存在也算成功
-
-            logger.info(f"尝试豆瓣订阅: {title} ({douban_id})")
-
-            try:
-                from app.chain.subscribe import SubscribeChain
-                sub_id, message = SubscribeChain().add(
-                    title=title,
-                    year=year,
-                    mtype=MediaType.TV,
-                    doubanid=douban_id,
-                    exist_ok=True,
-                )
-                if sub_id:
-                    logger.info(f"豆瓣订阅成功: {title}")
-                    return True
-                else:
-                    logger.warning(f"豆瓣订阅失败: {title} - {message}")
-                    return False
-            except Exception as e:
-                logger.warning(f"豆瓣订阅失败: {e}")
-                return False
-
-        except Exception as e:
-            logger.warning(f"豆瓣订阅异常: {e}")
-            return False
-
-    def __set_release_reminder(self, tmdb_info: Dict, release_date: str):
-        """设置开播前24小时提醒通知"""
-        try:
-            title = tmdb_info.get("name") or tmdb_info.get("title", "")
-            tmdb_id = tmdb_info.get("id", "")
-
-            if not release_date or len(release_date) < 10:
-                logger.warning(f"无法设置提醒：缺少精确开播日期 ({title})")
-                return
-
-            # 计算提醒时间：开播前24小时
-            release_dt = datetime.strptime(release_date, "%Y-%m-%d")
-            reminder_dt = release_dt - timedelta(hours=24)
-
-            # 如果提醒时间已过，跳过
-            if reminder_dt <= datetime.now():
-                logger.info(f"开播提醒时间已过，跳过: {title} ({release_date})")
-                return
-
-            # 注册一次性定时任务
-            job_id = f"douban_reminder_{tmdb_id}_{release_date}"
-            try:
-                self._scheduler.add_job(
-                    func=self.__send_reminder_notification,
-                    trigger=DateTrigger(run_date=reminder_dt),
-                    args=[title, tmdb_id, release_date],
-                    id=job_id,
-                    name=f"开播提醒 - {title}",
-                    replace_existing=True,
-                )
-                logger.info(f"已设置开播前24小时提醒: {title} | 开播: {release_date} | 提醒: {reminder_dt}")
-            except Exception as e:
-                logger.warning(f"注册提醒任务失败: {e}")
-
-        except Exception as e:
-            logger.warning(f"设置开播提醒失败: {e}")
-
-    def __send_reminder_notification(self, title: str, tmdb_id: str, release_date: str):
-        """发送开播前24小时提醒通知"""
-        try:
-            notify_text = (
-                f"🎞 {title}\n\n"
-                f" 播出时间：{release_date}\n"
-                f"⏰ 距开播还有24小时，记得准时观看！"
-            )
-            self.post_message(
-                mtype=NotificationType.Plugin,
-                title=f"开播提醒 - {title}",
-                text=notify_text,
-            )
-            logger.info(f"已发送开播提醒通知: {title}")
-        except Exception as e:
-            logger.warning(f"发送开播提醒通知失败: {e}")
-
-    def __fetch_streaming_platform_from_tmdb(self, title: str, year: str = "") -> str:
-        """从 TMDB 获取播放平台信息（优先）"""
-        if not title:
-            return ""
-        try:
-            from app.chain.tmdb import TmdbChain
-            from app.core.config import settings
-            tmdbchain = TmdbChain()
-
-            # 搜索 TV
-            tv_results = tmdbchain.search_tv(title=title, year=year)
-            media_type = "tv"
-            search_results = []
-            if tv_results and tv_results.get("results"):
-                search_results = tv_results["results"]
-            else:
-                # 也搜索 Movie
-                movie_results = tmdbchain.search_movie(title=title, year=year)
-                if movie_results and movie_results.get("results"):
-                    search_results = movie_results["results"]
-                    media_type = "movie"
-
-            if not search_results:
-                return ""
-
-            # 取第一个结果
-            first = search_results[0]
-            tmdb_id = first.get("id")
-            if not tmdb_id:
-                return ""
-
-            # 验证标题是否匹配
-            result_title = first.get("name", "") or first.get("title", "")
-            result_year = first.get("first_air_date", "") or first.get("release_date", "")
-            result_year = result_year[:4] if result_year else ""
-            if result_title != title and result_year != str(year):
-                return ""
-
-            # 调用 TMDB watch providers API
-            api_key = getattr(settings, "TMDB_API_KEY", "")
-            if not api_key:
-                return ""
-
-            tmdb_domain = getattr(settings, "TMDB_DOMAIN", "api.themoviedb.org")
-            provider_url = f"https://{tmdb_domain}/3/{media_type}/{tmdb_id}/watch/providers?api_key={api_key}"
-            headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-            }
-            resp = requests.get(provider_url, headers=headers, timeout=10)
-            resp.raise_for_status()
-            data = resp.json()
-
-            results = data.get("results", {})
-            if not results:
-                return ""
-
-            # 优先取中国大陆 (CN)，其次取美国 (US)，最后取全部结果中的 flatrate
-            priority_regions = ["CN", "US"]
-            provider_names = []
-            provider_keywords_map = {
-                "腾讯视频": ["Tencent Video", "tencent", "腾讯视频", "腾讯"],
-                "爱奇艺": ["iQIYI", "iqiyi", "爱奇艺"],
-                "优酷": ["Youku", "youku", "优酷"],
-                "芒果TV": ["Mango TV", "mgtv", "芒果TV", "芒果"],
-                "B站": ["Bilibili", "bilibili", "哔哩哔哩", "B站"],
-                "Netflix": ["Netflix", "网飞", "奈飞"],
-                "Disney+": ["Disney Plus", "Disney+", "迪士尼+"],
-                "HBO": ["HBO Max", "HBO"],
-                "Amazon": ["Amazon Prime Video", "Amazon Prime", "Prime Video", "亚马逊"],
-                "Hulu": ["Hulu"],
-                "Apple TV+": ["Apple TV Plus", "Apple TV+", "苹果tv+"],
-                "Paramount+": ["Paramount Plus", "Paramount+", "派拉蒙+"],
-            }
-
-            for region in priority_regions:
-                region_data = results.get(region, {})
-                flatrate = region_data.get("flatrate", [])
-                if flatrate:
-                    for prov in flatrate:
-                        prov_name = prov.get("provider_name", "")
-                        # 匹配标准平台名
-                        matched = False
-                        for std_name, keywords in provider_keywords_map.items():
-                            for kw in keywords:
-                                if kw.lower() in prov_name.lower() or prov_name.lower() == kw.lower():
-                                    if std_name not in provider_names:
-                                        provider_names.append(std_name)
-                                    matched = True
-                                    break
-                            if matched:
-                                break
-                        if not matched and prov_name:
-                            provider_names.append(prov_name)
-                    break
-
-            if provider_names:
-                result = " / ".join(provider_names)
-                logger.info(f"播放平台(TMDB): {title} -> {result}")
-                return result
-
-            return ""
-        except Exception as e:
-            logger.debug(f"从 TMDB 获取播放平台失败 ({title}): {e}")
-            return ""
-
-    def __fetch_streaming_platform_from_web(self, title: str) -> str:
-        """从网页搜索获取播放平台信息（回退方案）"""
-        if not title:
-            return ""
-        try:
-            search_query = f"{title} 哪个平台播出"
-            search_url = f"https://www.bing.com/search?q={requests.utils.quote(search_query)}"
-            headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-            }
-            resp = requests.get(search_url, headers=headers, timeout=10)
-            resp.raise_for_status()
-            html = resp.text
-
-            # 只提取搜索结果摘要文本，避免页面其他部分（广告、侧边栏等）的干扰
-            # Bing 搜索结果摘要通常在 <p class="b_lineclamp..."> 或 <div class="b_caption"><p> 中
-            snippets = re.findall(r'<p\s+class="b_lineclamp[^"]*"[^>]*>(.*?)</p>', html, re.DOTALL)
-            if not snippets:
-                snippets = re.findall(r'<div\s+class="b_caption">.*?<p[^>]*>(.*?)</p>', html, re.DOTALL)
-
-            # 合并所有摘要文本并清理 HTML 标签
-            search_text = ' '.join(snippets)
-            search_text = re.sub(r'<[^>]+>', '', search_text)
-            search_text = unescape(search_text)
-
-            if not search_text:
-                logger.info(f"未找到搜索结果摘要: {title}")
-                return ""
-
-            # 在摘要文本中匹配平台关键词（而非整个 HTML 页面）
-            platforms = []
-            platform_keywords = {
-                "腾讯视频": ["腾讯视频", "腾讯"],
-                "爱奇艺": ["爱奇艺", "iqiyi", "IQIYI"],
-                "优酷": ["优酷", "youku", "YOUKU"],
-                "芒果TV": ["芒果TV", "芒果tv", "mgtv", "MGTV"],
-                "B站": ["B站", "bilibili", "哔哩哔哩", "Bilibili"],
-                "央视": ["CCTV", "央视"],
-                "卫视": ["卫视"],
-                "Netflix": ["Netflix", "网飞", "奈飞"],
-                "Disney+": ["Disney+", "迪士尼+"],
-                "HBO": ["HBO"],
-                "Amazon": ["Amazon Prime", "亚马逊"],
-                "Hulu": ["Hulu"],
-            }
-
-            for platform, keywords in platform_keywords.items():
-                for kw in keywords:
-                    if kw.lower() in search_text.lower():
-                        if platform not in platforms:
-                            platforms.append(platform)
-                        break
-
-            if platforms:
-                result = " / ".join(platforms)
-                logger.info(f"播放平台(网页): {title} -> {result}")
-                return result
-
-            logger.info(f"未找到播放平台信息: {title}")
-            return ""
-        except Exception as e:
-            logger.warning(f"搜索播放平台失败 ({title}): {e}")
-            return ""
-
-    def __fetch_streaming_platform(self, title: str, year: str = "") -> str:
-        """搜索播放平台信息（优先 TMDB，无结果则网页搜索回退）"""
-        if not title:
-            return ""
-        # 优先从 TMDB 获取
-        tmdb_result = self.__fetch_streaming_platform_from_tmdb(title, year)
-        if tmdb_result:
-            return tmdb_result
-        # 回退到网页搜索
-        return self.__fetch_streaming_platform_from_web(title)
-
-    def __fetch_dingdang_time(self, title: str) -> str:
-        """搜索定档时间（通过Bing搜索）"""
-        if not title:
-            return ""
-        try:
-            search_query = f"{title} 定档时间"
-            search_url = f"https://www.bing.com/search?q={requests.utils.quote(search_query)}"
-            headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-            }
-            resp = requests.get(search_url, headers=headers, timeout=10)
-            resp.raise_for_status()
-            html = resp.text
-
-            # 搜索日期格式
-            date_patterns = [
-                r'(\d{4}[-/年]\d{1,2}[-/月]\d{1,2}[日号]?)',
-                r'定档[：:]\s*(\d{4}[-/年]\d{1,2}[-/月]\d{1,2}[日号]?)',
-                r'播出[：:]\s*(\d{4}[-/年]\d{1,2}[-/月]\d{1,2}[日号]?)',
-            ]
-            for pattern in date_patterns:
-                match = re.search(pattern, html)
-                if match:
-                    date_str = match.group(1)
-                    logger.info(f"定档时间搜索结果: {title} -> {date_str}")
-                    return date_str
-
-            return ""
-        except Exception as e:
-            logger.warning(f"搜索定档时间失败 ({title}): {e}")
-            return ""
-
-    def __subscribe_tmdb(self, tmdb_info: Dict):
-        """添加TMDB订阅（先检测是否已存在）"""
-        try:
-            tmdb_id = tmdb_info.get("id")
-            title = tmdb_info.get("name") or tmdb_info.get("title", "")
-            media_type = MediaType.TV if tmdb_info.get("first_air_date") else MediaType.MOVIE
-            first_air_date = tmdb_info.get("first_air_date", "") or tmdb_info.get("release_date", "")
-            year = first_air_date[:4] if first_air_date else ""
-
-            # 检测是否已存在订阅
-            if self.__check_subscription_exists(tmdb_id=tmdb_id, title=title):
-                logger.info(f"TMDB订阅已存在，跳过: {title}")
-                return
-
-            logger.info(f"添加TMDB订阅: {title} (tmdb_id={tmdb_id}, type={media_type.value})")
-
-            # 调用 SubscribeChain 添加订阅
-            from app.chain.subscribe import SubscribeChain
-            sub_id, message = SubscribeChain().add(
-                title=title,
-                year=year,
-                mtype=media_type,
-                tmdbid=tmdb_id,
-                exist_ok=True,
-            )
-            if not sub_id:
-                logger.warning(f"TMDB订阅失败: {title} - {message}")
-
-            # 设置开播前24小时提醒
-            if first_air_date and len(first_air_date) >= 10:
-                self.__set_release_reminder(tmdb_info, first_air_date)
-        except Exception as e:
-            logger.warning(f"TMDB订阅失败: {e}")
-
-    def __add_tracking(self, item: Dict, tmdb_info: Optional[Dict] = None):
-        """保存到本地追踪记录"""
-        try:
-            tracking = json.loads(self._tracking_items or "[]")
-            tracking.append({
-                "douban_id": item.get("douban_id", ""),
-                "title": item.get("title", ""),
-                "year": item.get("year", ""),
-                "douban_url": item.get("douban_url", ""),
-                "added_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "tmdb_id": tmdb_info.get("id") if tmdb_info else None,
-            })
-            self._tracking_items = json.dumps(tracking, ensure_ascii=False)
-            logger.info(f"已添加到追踪列表: {item.get('title', '')}")
-        except Exception as e:
-            logger.warning(f"添加追踪失败: {e}")
-
-    def __refresh_tracking(self):
-        """每日刷新本地追踪记录，检查是否有TMDB可订阅或精确时间出现"""
-        try:
-            tracking = json.loads(self._tracking_items or "[]")
-            if not tracking:
-                return
-
-            logger.info(f"开始刷新本地追踪记录，共 {len(tracking)} 条")
-
-            updated_tracking = []
-            for item in tracking:
-                try:
-                    douban_id = item.get("douban_id", "")
-                    title = item.get("title", "")
-
-                    # 尝试 TMDB 匹配
-                    tmdb_matched = self.__try_tmdb_match(item)
-
-                    if tmdb_matched:
-                        first_air_date = tmdb_matched.get("first_air_date", "") or tmdb_matched.get("release_date", "")
-
-                        if first_air_date and len(first_air_date) >= 10:
-                            # 有精确时间，自动订阅
-                            self.__subscribe_tmdb(tmdb_matched)
-                            logger.info(f"追踪记录已自动订阅: {title}")
-                            # 发送通知
-                            self.post_message(
-                                mtype=NotificationType.Plugin,
-                                title=f"豆瓣追踪 - {title} 已自动订阅",
-                                text=f"🎞 {title}\n已通过TMDB匹配成功并自动添加订阅，开播日期：{first_air_date}"
-                            )
-                            # 不加入 updated_tracking（已订阅，移除）
-                            continue
-                        else:
-                            # TMDB匹配但无精确时间，更新 tmdb_id
-                            item["tmdb_id"] = tmdb_matched.get("id")
-                            updated_tracking.append(item)
-                            continue
-                    else:
-                        # TMDB 匹配失败，尝试搜索定档时间
-                        dingdang_time = self.__fetch_dingdang_time(item.get("title", ""))
-                        if dingdang_time:
-                            # 找到定档时间，尝试解析日期
-                            date_match = re.search(r'(\d{4})[-/年](\d{1,2})[-/月](\d{1,2})', dingdang_time)
-                            if date_match:
-                                y, m, d = date_match.group(1), date_match.group(2), date_match.group(3)
-                                release_date = f"{y}-{m.zfill(2)}-{d.zfill(2)}"
-                                logger.info(f"追踪刷新找到定档时间: {title} -> {release_date}")
-                                # 保存定档时间到 item
-                                item["release_date"] = release_date
-
-                        # 尝试豆瓣订阅
-                        douban_subscribed = self.__try_douban_subscribe(item)
-                        if douban_subscribed:
-                            logger.info(f"追踪记录已通过豆瓣订阅: {title}")
-                            self.post_message(
-                                mtype=NotificationType.Plugin,
-                                title=f"豆瓣追踪 - {title} 已订阅",
-                                text=f"🎞 {title}\n已通过豆瓣订阅成功添加订阅"
-                            )
-                            continue  # 已订阅，移除
-
-                        updated_tracking.append(item)
-
-                except Exception as e:
-                    logger.warning(f"刷新追踪条目失败 ({item.get('title', '')}): {e}")
-                    updated_tracking.append(item)
-
-            self._tracking_items = json.dumps(updated_tracking, ensure_ascii=False)
-            self.__save_config()
-            logger.info(f"追踪刷新完成，剩余 {len(updated_tracking)} 条")
-
-        except Exception as e:
-            logger.error(f"追踪刷新异常: {e}")
+    def message_action(self, event: Even
