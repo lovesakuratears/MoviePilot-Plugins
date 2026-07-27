@@ -21,7 +21,7 @@ class DoubanUpcoming(_PluginBase):
     plugin_name = "刷豆瓣助手"
     plugin_desc = "省去打开豆瓣的过程，提供一条龙订阅推送服务。定时获取豆瓣即将播出/热门影视榜单，支持通过豆瓣UID获取想看列表并自动订阅未上映条目。"
     plugin_icon = "douban.png"
-    plugin_version = "1.9.3"
+    plugin_version = "1.9.4"
     plugin_author = "lovesakuratears"
     author_url = "https://github.com/lovesakuratears/MoviePilot-Plugins"
     plugin_config_prefix = "doubanupcoming_"
@@ -1361,6 +1361,7 @@ class DoubanUpcoming(_PluginBase):
                 did = item.get("douban_id", "")
                 if did and did not in seen_ids:
                     seen_ids.add(did)
+                    item["source"] = "即将上映"
                     all_items.append(item)
 
         if "实时热门" in self._data_sources:
@@ -1369,6 +1370,7 @@ class DoubanUpcoming(_PluginBase):
                 did = item.get("douban_id", "")
                 if did and did not in seen_ids:
                     seen_ids.add(did)
+                    item["source"] = "实时热门"
                     all_items.append(item)
 
         return all_items
@@ -1510,12 +1512,16 @@ class DoubanUpcoming(_PluginBase):
                 broadcast_line += f" / 单集片长{episode_duration}分钟"
 
         # ====== 核心优化：先匹配 TMDB 一次，复用结果（海报/链接/平台），避免重复调用 ======
+        # 使用剥离季数的标题进行 TMDB 匹配，提高搜索准确率
         tmdb_url = ""
         tmdb_image = image_url
         streaming_platform = item.get("streaming_platform", "")
         tmdb_matched = None
         try:
-            tmdb_matched = self.__try_tmdb_match(item)
+            # 用 display_title 替换原 title 进行 TMDB 匹配，避免季数干扰搜索
+            tmdb_item = dict(item)
+            tmdb_item["title"] = display_title
+            tmdb_matched = self.__try_tmdb_match(tmdb_item)
             if tmdb_matched:
                 tmdb_id = tmdb_matched.get("id", "")
                 if tmdb_id:
@@ -1530,9 +1536,9 @@ class DoubanUpcoming(_PluginBase):
         except Exception:
             pass
 
-        # 播放平台回退：TMDB 未获取到时走搜索
+        # 播放平台回退：TMDB 未获取到时走搜索（使用剥离季数的标题，提高搜索准确率）
         if not streaming_platform:
-            streaming_platform = self.__fetch_streaming_platform(title, year)
+            streaming_platform = self.__fetch_streaming_platform(display_title, year)
 
         # 链接优先使用TMDB链接，否则使用豆瓣链接
         link_url = tmdb_url if tmdb_url else douban_url
@@ -1584,7 +1590,8 @@ class DoubanUpcoming(_PluginBase):
                 actions=actions,
                 buttons=buttons
             )
-            logger.info(f"已推送通知: {title}")
+            source_label = item.get("source", "")
+            logger.info(f"已推送通知 [{source_label}]: {title}")
             self._last_notify_title = douban_id
             return True
         except Exception as e:
@@ -2304,7 +2311,6 @@ class DoubanUpcoming(_PluginBase):
             search_text = unescape(search_text)
 
             if not search_text:
-                logger.info(f"未找到搜索结果摘要: {title}")
                 return ""
 
             # 在摘要文本中匹配平台关键词（而非整个 HTML 页面）
@@ -2336,7 +2342,6 @@ class DoubanUpcoming(_PluginBase):
                 logger.info(f"播放平台(网页): {title} -> {result}")
                 return result
 
-            logger.info(f"未找到播放平台信息: {title}")
             return ""
         except Exception as e:
             logger.warning(f"搜索播放平台失败 ({title}): {e}")
