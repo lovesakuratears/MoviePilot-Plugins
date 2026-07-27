@@ -21,7 +21,7 @@ class TmdbHostUpdater(_PluginBase):
     plugin_name = "TMDB Host更新"
     plugin_desc = "定时从CheckTMDB获取最新TMDB hosts，自动更新系统hosts文件，解决TMDB无法访问问题。"
     plugin_icon = "hosts.png"
-    plugin_version = "1.0.12"
+    plugin_version = "1.0.13"
     plugin_author = "lovesakuratears"
     author_url = "https://github.com/cnwikee/CheckTMDB"
     plugin_config_prefix = "tmdbhostupdater_"
@@ -959,7 +959,13 @@ class TmdbHostUpdater(_PluginBase):
             # 部分域名不通但至少有一个可达，不触发通知
             if not tmdb_all_down:
                 reachable = [r["host"] for r in tmdb_results if r["success"]]
-                logger.info(f"TMDB部分域名不通，可达域名: {reachable}，跳过通知")
+                unreachable = [r["host"] for r in tmdb_results if not r["success"]]
+                logger.info(f"TMDB部分域名不通，可达: {reachable}，不通: {unreachable}，跳过通知")
+                # 重置之前可能残留的 failing 状态和重试计数
+                if self._health_failing or self._health_retry_count > 0:
+                    self._health_failing = False
+                    self._health_retry_count = 0
+                    self.__save_config()
                 return
 
             # TMDB全部域名不通
