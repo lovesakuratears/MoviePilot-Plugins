@@ -10,7 +10,7 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.date import DateTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
-from app.core.event import eventmanager
+from app.core.event import eventmanager, Event
 from app.log import logger
 from app.plugins import _PluginBase
 from app.schemas.types import EventType, NotificationType
@@ -69,11 +69,14 @@ class DoubanUpcoming(_PluginBase):
             self._current_queue = config.get("current_queue", "[]")
             self._last_notify_title = config.get("last_notify_title", "")
 
-            # 如果开启了立即执行，重置开关并触发推送
+            # 如果开启了立即执行，重置开关并触发推送（仅在插件启用时执行）
             if self._run_immediately:
                 self._run_immediately = False
-                logger.info("检测到立即执行开关，正在触发首次推送...")
-                self.__run_push()
+                if not self._enabled:
+                    logger.info("插件未启用，跳过立即执行")
+                else:
+                    logger.info("检测到立即执行开关，正在触发首次推送...")
+                    self.__run_push()
 
     def get_state(self) -> bool:
         return self._enabled
@@ -635,6 +638,14 @@ class DoubanUpcoming(_PluginBase):
                 "summary": "无兴趣",
                 "description": "标记为不感兴趣，推送下一条",
             },
+            {
+                "path": "/stop",
+                "endpoint": DoubanUpcoming.__api_stop,
+                "methods": ["POST"],
+                "auth": "bear",
+                "summary": "停止推送",
+                "description": "停止本轮继续推送，结束当前推送队列",
+            },
         ]
 
     def __fetch_coming(self, sort_by: str = "hot", count: int = 10) -> List[Dict]:
@@ -861,21 +872,41 @@ class DoubanUpcoming(_PluginBase):
         return results
 
     def __fetch_douban_wish(self) -> List[Dict]:
-        """通过豆瓣UID获取用户想看列表"""
+        """通过豆瓣UID获取用户想看列表（使用豆瓣官方 feed）"""
         if not self._douban_uid or not self._enable_wish:
             return []
 
-        url = f"https://rsshub.ddsrem.com/douban/user/{self._douban_uid}/wish"
+        url = f"https://www.douban.com/feed/people/{self._douban_uid}/interests"
         results = []
         try:
-            resp = requests.get(url, timeout=15)
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            }
+            resp = requests.get(url, headers=headers, timeout=15)
             resp.raise_for_status()
             root = ET.fromstring(resp.text)
             items = root.findall('.//item')
             for item in items:
                 try:
-                    title = item.findtext('title', '').strip()
+                    title_raw = item.findtext('title', '').strip()
                     link = item.findtext('link', '').strip()
+                    desc_raw = item.findtext('description', '').strip()
+
+                    # 豆瓣官方 feed 的 title 格式："用户名 想看/看过/在看 《标题》"
+                    # 只保留"想看"状态的条目
+                    if '想看' not in title_raw:
+                        continue
+
+                    # 从 title 中提取实际标题
+                    title = title_raw
+                    title_match = re.search(r'《(.+?)》', title_raw)
+                    if title_match:
+                        title = title_match.group(1)
+                    else:
+                        # 尝试从 "想看" 后面提取
+                        parts = title_raw.split('想看')
+                        if len(parts) > 1:
+                            title = parts[-1].strip()
 
                     douban_id = ''
                     m = re.search(r'/subject/(\d+)/', link)
@@ -884,7 +915,6 @@ class DoubanUpcoming(_PluginBase):
                     if m:
                         douban_id = m.group(1)
 
-                    desc_raw = item.findtext('description', '').strip()
                     desc = unescape(desc_raw)
 
                     # 提取年份
@@ -903,16 +933,20 @@ class DoubanUpcoming(_PluginBase):
                     summary = ''
                     ps = re.findall(r'<p>(.*?)</p>', desc, re.DOTALL)
                     for p_text in ps:
-                        p_text = p_text.strip()
-                        if p_text and not re.match(r'^\d', p_text) and len(p_text) > 20:
+                        p_text = re.sub(r'<[^>]+>', '', p_text).strip()
+                        if p_text and len(p_text) > 20:
                             summary = p_text
                             break
 
-                    # 提取评分
+                    # 提取评分（豆瓣 feed 中评论文本格式："推荐: 8.0" 等）
                     rating = ''
-                    rating_match = re.search(r'(\d+\.?\d*)', desc)
+                    rating_match = re.search(r'推荐[：:]\s*(\d+\.?\d*)', desc)
                     if rating_match:
                         rating = rating_match.group(1)
+                    else:
+                        rating_match = re.search(r'(\d+\.?\d*)\s*分', desc)
+                        if rating_match:
+                            rating = rating_match.group(1)
 
                     results.append({
                         "title": title,
@@ -1286,7 +1320,7 @@ class DoubanUpcoming(_PluginBase):
         # 播放平台
         streaming_platform = item.get("streaming_platform", "")
         if not streaming_platform:
-            streaming_platform = self.__fetch_streaming_platform(title)
+            streaming_platform = self.__fetch_streaming_platform(title, year)
         platform_line = f" 播放平台：{streaming_platform}" if streaming_platform else ""
 
         # 构建通知文本
@@ -1312,12 +1346,13 @@ class DoubanUpcoming(_PluginBase):
         search_title = re.sub(r'\s*\(.*?\)', '', title).strip()
         douyin_search_url = f"https://www.douyin.com/search/{requests.utils.quote(search_title)}%20预告"
 
-        # 构建交互按钮
-        actions = [
-            {"text": "查看详情", "url": douban_url},
-            {"text": "搜预告", "url": douyin_search_url},
-            {"text": "有兴趣", "api": "plugin/DoubanUpcoming/interest", "method": "post", "params": {"douban_id": douban_id}},
-            {"text": "无兴趣", "api": "plugin/DoubanUpcoming/not_interest", "method": "post", "params": {"douban_id": douban_id}},
+        # 构建交互按钮（使用 buttons + callback_data 格式，支持按钮回调通知渠道）
+        buttons = [
+            [
+                {"text": "有兴趣", "callback_data": f"[PLUGIN]{self.__class__.__name__}|interest|{douban_id}"},
+                {"text": "无兴趣", "callback_data": f"[PLUGIN]{self.__class__.__name__}|not_interest|{douban_id}"},
+                {"text": "停止", "callback_data": f"[PLUGIN]{self.__class__.__name__}|stop|{douban_id}"},
+            ],
         ]
 
         # 发送通知
@@ -1327,7 +1362,7 @@ class DoubanUpcoming(_PluginBase):
                 title=f"豆瓣 - {title}",
                 text=notify_text,
                 image=image_url if image_url else None,
-                actions=actions
+                buttons=buttons
             )
             logger.info(f"已推送通知: {title}")
             self._last_notify_title = douban_id
@@ -1471,6 +1506,76 @@ class DoubanUpcoming(_PluginBase):
             return {"code": 0, "message": f"已跳过，推送下一条: {next_item.get('title', '')}"}
 
         return {"code": 0, "message": "已跳过，无更多待推送条目"}
+
+    def __api_stop(self, douban_id: str = ""):
+        """停止本轮继续推送，清空当前推送队列"""
+        # 清空当前队列
+        self._current_queue = "[]"
+
+        # 标记当前条目状态
+        if douban_id:
+            pushed = json.loads(self._pushed_items or "{}")
+            if douban_id in pushed:
+                pushed[douban_id]["stopped"] = True
+                self._pushed_items = json.dumps(pushed, ensure_ascii=False)
+
+        self.__save_config()
+        logger.info("已停止本轮推送")
+        return {"code": 0, "message": "已停止本轮推送"}
+
+    @eventmanager.register(EventType.MessageAction)
+    def message_action(self, event: Event):
+        """处理消息按钮回调（有兴趣/无兴趣/停止）"""
+        event_data = event.event_data
+        if not event_data:
+            return
+
+        # 检查是否为本插件的回调
+        plugin_id = event_data.get("plugin_id")
+        if plugin_id != self.__class__.__name__:
+            return
+
+        # 获取回调数据
+        channel = event_data.get("channel")
+        source = event_data.get("source")
+        userid = event_data.get("userid")
+        original_message_id = event_data.get("original_message_id")
+        original_chat_id = event_data.get("original_chat_id")
+
+        callback_text = event_data.get("text", "")
+        # 解析 callback_data 格式: [PLUGIN]DoubanUpcoming|action|douban_id
+        parts = callback_text.split("|")
+        if len(parts) < 3:
+            return
+
+        action = parts[1]
+        douban_id = parts[2]
+
+        if action == "interest":
+            result = self.__api_interest(douban_id)
+            self.post_message(
+                channel=channel,
+                mtype=NotificationType.Plugin,
+                title="处理完成",
+                text=result.get("message", "已标记为感兴趣"),
+                userid=userid,
+                original_message_id=original_message_id,
+                original_chat_id=original_chat_id
+            )
+        elif action == "not_interest":
+            result = self.__api_not_interest(douban_id)
+            # not_interest 会自动推送下一条通知，无需额外发送结果消息
+        elif action == "stop":
+            result = self.__api_stop(douban_id)
+            self.post_message(
+                channel=channel,
+                mtype=NotificationType.Plugin,
+                title="已停止推送",
+                text="本轮推送已停止，不再继续推送下一条。",
+                userid=userid,
+                original_message_id=original_message_id,
+                original_chat_id=original_chat_id
+            )
 
     def __try_tmdb_match(self, item: Dict) -> Optional[Dict]:
         """尝试通过标题+年份搜索TMDB，通过演员交叉验证"""
@@ -1621,8 +1726,108 @@ class DoubanUpcoming(_PluginBase):
         except Exception as e:
             logger.warning(f"发送开播提醒通知失败: {e}")
 
-    def __fetch_streaming_platform(self, title: str) -> str:
-        """搜索播放平台信息（通过Bing搜索）"""
+    def __fetch_streaming_platform_from_tmdb(self, title: str, year: str = "") -> str:
+        """从 TMDB 获取播放平台信息（优先）"""
+        if not title:
+            return ""
+        try:
+            from app.utils.tmdb import TmdbHelper
+            from app.core.config import settings
+            tmdb = TmdbHelper()
+
+            # 搜索 TV
+            search_results = tmdb.search_tv(query=title, year=year)
+            media_type = "tv"
+            if not search_results:
+                # 也搜索 Movie
+                search_results = tmdb.search_movie(query=title, year=year)
+                media_type = "movie"
+
+            if not search_results:
+                return ""
+
+            # 取第一个结果
+            first = search_results[0]
+            tmdb_id = first.get("id")
+            if not tmdb_id:
+                return ""
+
+            # 验证标题是否匹配
+            result_title = first.get("name", "") or first.get("title", "")
+            result_year = first.get("first_air_date", "") or first.get("release_date", "")
+            result_year = result_year[:4] if result_year else ""
+            if result_title != title and result_year != str(year):
+                return ""
+
+            # 调用 TMDB watch providers API
+            api_key = getattr(settings, "TMDB_API_KEY", "")
+            if not api_key:
+                return ""
+
+            tmdb_domain = getattr(settings, "TMDB_DOMAIN", "api.themoviedb.org")
+            provider_url = f"https://{tmdb_domain}/3/{media_type}/{tmdb_id}/watch/providers?api_key={api_key}"
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            }
+            resp = requests.get(provider_url, headers=headers, timeout=10)
+            resp.raise_for_status()
+            data = resp.json()
+
+            results = data.get("results", {})
+            if not results:
+                return ""
+
+            # 优先取中国大陆 (CN)，其次取美国 (US)，最后取全部结果中的 flatrate
+            priority_regions = ["CN", "US"]
+            provider_names = []
+            provider_keywords_map = {
+                "腾讯视频": ["Tencent Video", "tencent", "腾讯视频", "腾讯"],
+                "爱奇艺": ["iQIYI", "iqiyi", "爱奇艺"],
+                "优酷": ["Youku", "youku", "优酷"],
+                "芒果TV": ["Mango TV", "mgtv", "芒果TV", "芒果"],
+                "B站": ["Bilibili", "bilibili", "哔哩哔哩", "B站"],
+                "Netflix": ["Netflix", "网飞", "奈飞"],
+                "Disney+": ["Disney Plus", "Disney+", "迪士尼+"],
+                "HBO": ["HBO Max", "HBO"],
+                "Amazon": ["Amazon Prime Video", "Amazon Prime", "Prime Video", "亚马逊"],
+                "Hulu": ["Hulu"],
+                "Apple TV+": ["Apple TV Plus", "Apple TV+", "苹果tv+"],
+                "Paramount+": ["Paramount Plus", "Paramount+", "派拉蒙+"],
+            }
+
+            for region in priority_regions:
+                region_data = results.get(region, {})
+                flatrate = region_data.get("flatrate", [])
+                if flatrate:
+                    for prov in flatrate:
+                        prov_name = prov.get("provider_name", "")
+                        # 匹配标准平台名
+                        matched = False
+                        for std_name, keywords in provider_keywords_map.items():
+                            for kw in keywords:
+                                if kw.lower() in prov_name.lower() or prov_name.lower() == kw.lower():
+                                    if std_name not in provider_names:
+                                        provider_names.append(std_name)
+                                    matched = True
+                                    break
+                            if matched:
+                                break
+                        if not matched and prov_name:
+                            provider_names.append(prov_name)
+                    break
+
+            if provider_names:
+                result = " / ".join(provider_names)
+                logger.info(f"播放平台(TMDB): {title} -> {result}")
+                return result
+
+            return ""
+        except Exception as e:
+            logger.debug(f"从 TMDB 获取播放平台失败 ({title}): {e}")
+            return ""
+
+    def __fetch_streaming_platform_from_web(self, title: str) -> str:
+        """从网页搜索获取播放平台信息（回退方案）"""
         if not title:
             return ""
         try:
@@ -1635,18 +1840,33 @@ class DoubanUpcoming(_PluginBase):
             resp.raise_for_status()
             html = resp.text
 
-            # 尝试从搜索结果中提取平台信息
+            # 只提取搜索结果摘要文本，避免页面其他部分（广告、侧边栏等）的干扰
+            # Bing 搜索结果摘要通常在 <p class="b_lineclamp..."> 或 <div class="b_caption"><p> 中
+            snippets = re.findall(r'<p\s+class="b_lineclamp[^"]*"[^>]*>(.*?)</p>', html, re.DOTALL)
+            if not snippets:
+                snippets = re.findall(r'<div\s+class="b_caption">.*?<p[^>]*>(.*?)</p>', html, re.DOTALL)
+
+            # 合并所有摘要文本并清理 HTML 标签
+            search_text = ' '.join(snippets)
+            search_text = re.sub(r'<[^>]+>', '', search_text)
+            search_text = unescape(search_text)
+
+            if not search_text:
+                logger.info(f"未找到搜索结果摘要: {title}")
+                return ""
+
+            # 在摘要文本中匹配平台关键词（而非整个 HTML 页面）
             platforms = []
             platform_keywords = {
                 "腾讯视频": ["腾讯视频", "腾讯"],
                 "爱奇艺": ["爱奇艺", "iqiyi", "IQIYI"],
                 "优酷": ["优酷", "youku", "YOUKU"],
-                "芒果TV": ["芒果TV", "芒果", "mgtv"],
-                "B站": ["B站", "bilibili", "哔哩哔哩"],
+                "芒果TV": ["芒果TV", "芒果tv", "mgtv", "MGTV"],
+                "B站": ["B站", "bilibili", "哔哩哔哩", "Bilibili"],
                 "央视": ["CCTV", "央视"],
                 "卫视": ["卫视"],
                 "Netflix": ["Netflix", "网飞", "奈飞"],
-                "Disney+": ["Disney+", "迪士尼"],
+                "Disney+": ["Disney+", "迪士尼+"],
                 "HBO": ["HBO"],
                 "Amazon": ["Amazon Prime", "亚马逊"],
                 "Hulu": ["Hulu"],
@@ -1654,14 +1874,14 @@ class DoubanUpcoming(_PluginBase):
 
             for platform, keywords in platform_keywords.items():
                 for kw in keywords:
-                    if kw.lower() in html.lower():
+                    if kw.lower() in search_text.lower():
                         if platform not in platforms:
                             platforms.append(platform)
                         break
 
             if platforms:
                 result = " / ".join(platforms)
-                logger.info(f"播放平台搜索结果: {title} -> {result}")
+                logger.info(f"播放平台(网页): {title} -> {result}")
                 return result
 
             logger.info(f"未找到播放平台信息: {title}")
@@ -1669,6 +1889,17 @@ class DoubanUpcoming(_PluginBase):
         except Exception as e:
             logger.warning(f"搜索播放平台失败 ({title}): {e}")
             return ""
+
+    def __fetch_streaming_platform(self, title: str, year: str = "") -> str:
+        """搜索播放平台信息（优先 TMDB，无结果则网页搜索回退）"""
+        if not title:
+            return ""
+        # 优先从 TMDB 获取
+        tmdb_result = self.__fetch_streaming_platform_from_tmdb(title, year)
+        if tmdb_result:
+            return tmdb_result
+        # 回退到网页搜索
+        return self.__fetch_streaming_platform_from_web(title)
 
     def __fetch_dingdang_time(self, title: str) -> str:
         """搜索定档时间（通过Bing搜索）"""
