@@ -21,7 +21,7 @@ class DoubanUpcoming(_PluginBase):
     plugin_name = "刷豆瓣助手"
     plugin_desc = "省去打开豆瓣的过程，提供一条龙订阅推送服务。定时获取豆瓣即将播出/热门影视榜单，支持通过豆瓣UID获取想看列表并自动订阅未上映条目。"
     plugin_icon = "douban.png"
-    plugin_version = "1.9.2"
+    plugin_version = "1.9.3"
     plugin_author = "lovesakuratears"
     author_url = "https://github.com/lovesakuratears/MoviePilot-Plugins"
     plugin_config_prefix = "doubanupcoming_"
@@ -457,6 +457,33 @@ class DoubanUpcoming(_PluginBase):
         interested_items.sort(key=lambda x: x.get("time", ""), reverse=True)
         not_interested_items.sort(key=lambda x: x.get("time", ""), reverse=True)
 
+        def format_display_time(time_str):
+            """格式化上映时间：有具体到日就日，没有就月份，月份没有就年份"""
+            if not time_str:
+                return ""
+            time_str = time_str.strip()
+            # 尝试解析完整日期时间格式
+            for fmt in ["%Y-%m-%d %H:%M:%S", "%Y-%m-%d"]:
+                try:
+                    dt = datetime.strptime(time_str, fmt)
+                    return dt.strftime("%Y-%m-%d")
+                except ValueError:
+                    continue
+            # 如果已经是 YYYY-MM 或 YYYY 格式，直接返回
+            if re.match(r'^\d{4}-\d{2}$', time_str) or re.match(r'^\d{4}$', time_str):
+                return time_str
+            # 尝试提取日期部分
+            date_match = re.search(r'(\d{4}-\d{2}-\d{2})', time_str)
+            if date_match:
+                return date_match.group(1)
+            date_match = re.search(r'(\d{4}-\d{2})', time_str)
+            if date_match:
+                return date_match.group(1)
+            date_match = re.search(r'(\d{4})', time_str)
+            if date_match:
+                return date_match.group(1)
+            return time_str
+
         def build_card(item):
             """构建单张水平卡片"""
             title = item.get("title", "")
@@ -465,8 +492,9 @@ class DoubanUpcoming(_PluginBase):
             genres = item.get("genres", "")
             release_date = item.get("release_date", "")
             time_str = item.get("time", "")
-            # 优先显示上映时间
-            display_time = release_date if release_date else time_str
+            # 优先显示上映时间，格式化到日
+            raw_time = release_date if release_date else time_str
+            display_time = format_display_time(raw_time)
             interest = item.get("interest")
             action = "感兴趣" if interest is True else "不感兴趣" if interest is False else ""
 
@@ -1422,6 +1450,7 @@ class DoubanUpcoming(_PluginBase):
                         "rating": item.get("rating", ""),
                         "year": item.get("year", ""),
                         "genres": item.get("genres", ""),
+                        "release_date": item.get("release_date", ""),
                     }
                     self._pushed_items = json.dumps(pushed, ensure_ascii=False)
                     break
@@ -1532,7 +1561,6 @@ class DoubanUpcoming(_PluginBase):
 
         # 链接按钮（跳转外部链接）
         actions = [
-            {"text": "查看详情", "url": douban_url},
             {"text": "搜预告", "url": douyin_search_url},
         ]
 
@@ -1552,6 +1580,7 @@ class DoubanUpcoming(_PluginBase):
                 title=f"豆瓣 - {title}",
                 text=notify_text,
                 image=tmdb_image if tmdb_image else None,
+                link=douban_url,
                 actions=actions,
                 buttons=buttons
             )
@@ -1636,6 +1665,7 @@ class DoubanUpcoming(_PluginBase):
             "rating": item.get("rating", "") or existing.get("rating", ""),
             "year": item.get("year", "") or existing.get("year", ""),
             "genres": item.get("genres", "") or existing.get("genres", ""),
+            "release_date": item.get("release_date", "") or existing.get("release_date", ""),
         }
         self._pushed_items = json.dumps(pushed, ensure_ascii=False)
 
@@ -1686,6 +1716,7 @@ class DoubanUpcoming(_PluginBase):
                 "rating": next_item.get("rating", ""),
                 "year": next_item.get("year", ""),
                 "genres": next_item.get("genres", ""),
+                "release_date": next_item.get("release_date", ""),
             }
             self._pushed_items = json.dumps(pushed, ensure_ascii=False)
             self.__save_config()
@@ -1721,6 +1752,7 @@ class DoubanUpcoming(_PluginBase):
                 "rating": item.get("rating", "") or existing.get("rating", ""),
                 "year": item.get("year", "") or existing.get("year", ""),
                 "genres": item.get("genres", "") or existing.get("genres", ""),
+                "release_date": item.get("release_date", "") or existing.get("release_date", ""),
             }
 
         self._pushed_items = json.dumps(pushed, ensure_ascii=False)
@@ -1746,6 +1778,7 @@ class DoubanUpcoming(_PluginBase):
                 "rating": next_item.get("rating", ""),
                 "year": next_item.get("year", ""),
                 "genres": next_item.get("genres", ""),
+                "release_date": next_item.get("release_date", ""),
             }
             self._pushed_items = json.dumps(pushed, ensure_ascii=False)
             self.__save_config()
