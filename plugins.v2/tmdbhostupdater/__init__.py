@@ -21,7 +21,7 @@ class TmdbHostUpdater(_PluginBase):
     plugin_name = "TMDB Host更新"
     plugin_desc = "定时从CheckTMDB获取最新TMDB hosts，自动更新系统hosts文件，解决TMDB无法访问问题。"
     plugin_icon = "hosts.png"
-    plugin_version = "1.0.11"
+    plugin_version = "1.0.12"
     plugin_author = "lovesakuratears"
     author_url = "https://github.com/cnwikee/CheckTMDB"
     plugin_config_prefix = "tmdbhostupdater_"
@@ -933,13 +933,19 @@ class TmdbHostUpdater(_PluginBase):
         return all(r["success"] for r in tmdb_results)
 
     def __health_check(self):
-        """定期健康检查：检测TMDB域名连通性，不通则重试+拉取远端对比+通知"""
+        """定期健康检查：检测TMDB域名连通性，全部不通时重试+拉取远端对比+通知"""
         try:
             logger.info(f"TMDB域名健康检查 (失败计数: {self._health_retry_count}/{self._ping_retry_count})")
 
-            tmdb_ok = self.__check_tmdb_connectivity()
+            # 获取 TMDB 域名的 ping 结果
+            results = self.__ping_all()
+            tmdb_results = [r for r in results if r["host"] in self.TMDB_DOMAINS]
+            self._ping_results = json.dumps(results, ensure_ascii=False)
 
-            if tmdb_ok:
+            tmdb_all_ok = all(r["success"] for r in tmdb_results)
+            tmdb_all_down = all(not r["success"] for r in tmdb_results)
+
+            if tmdb_all_ok:
                 if self._health_failing:
                     self._health_failing = False
                     self._health_retry_count = 0
@@ -950,7 +956,13 @@ class TmdbHostUpdater(_PluginBase):
                     self._health_retry_count = 0
                 return
 
-            # TMDB域名不通
+            # 部分域名不通但至少有一个可达，不触发通知
+            if not tmdb_all_down:
+                reachable = [r["host"] for r in tmdb_results if r["success"]]
+                logger.info(f"TMDB部分域名不通，可达域名: {reachable}，跳过通知")
+                return
+
+            # TMDB全部域名不通
             self._health_retry_count += 1
             self.__save_config()
 
