@@ -20,7 +20,7 @@ class DoubanUpcoming(_PluginBase):
     plugin_name = "刷豆瓣助手"
     plugin_desc = "省去打开豆瓣的过程，提供一条龙订阅推送服务。定时获取豆瓣即将播出/热门影视榜单，支持通过豆瓣UID获取想看列表并自动订阅未上映条目。"
     plugin_icon = "douban.png"
-    plugin_version = "1.4.0"
+    plugin_version = "1.5.0"
     plugin_author = "lovesakuratears"
     author_url = "https://github.com/lovesakuratears/MoviePilot-Plugins"
     plugin_config_prefix = "doubanupcoming_"
@@ -429,6 +429,11 @@ class DoubanUpcoming(_PluginBase):
                 "douban_url": info.get("douban_url", ""),
                 "time": info.get("time", ""),
                 "interest": info.get("interest"),
+                "image_url": info.get("image_url", ""),
+                "rating": info.get("rating", ""),
+                "year": info.get("year", ""),
+                "genres": info.get("genres", ""),
+                "summary": info.get("summary", ""),
             }
             if info.get("interest") is True:
                 interested_items.append(entry)
@@ -438,40 +443,6 @@ class DoubanUpcoming(_PluginBase):
         interested_items.sort(key=lambda x: x.get("time", ""), reverse=True)
         not_interested_items.sort(key=lambda x: x.get("time", ""), reverse=True)
 
-        interested_rows = []
-        for item in interested_items:
-            douban_url = item.get("douban_url", "")
-            title = item.get("title", "")
-            time = item.get("time", "")
-
-            row = {
-                'component': 'tr',
-                'content': [
-                    {'component': 'td', 'props': {'class': 'py-1 text-body-2'}, 'text': title},
-                    {'component': 'td', 'props': {'class': 'py-1', 'style': 'width: 100px'},
-                     'content': [{'component': 'VBtn', 'props': {'size': 'x-small', 'variant': 'text', 'color': 'primary', 'href': douban_url, 'target': '_blank'}, 'text': '豆瓣链接'}]},
-                    {'component': 'td', 'props': {'class': 'py-1 text-body-2 text-caption', 'style': 'width: 150px'}, 'text': time},
-                ]
-            }
-            interested_rows.append(row)
-
-        not_interested_rows = []
-        for item in not_interested_items:
-            douban_url = item.get("douban_url", "")
-            title = item.get("title", "")
-            time = item.get("time", "")
-
-            row = {
-                'component': 'tr',
-                'content': [
-                    {'component': 'td', 'props': {'class': 'py-1 text-body-2'}, 'text': title},
-                    {'component': 'td', 'props': {'class': 'py-1', 'style': 'width: 100px'},
-                     'content': [{'component': 'VBtn', 'props': {'size': 'x-small', 'variant': 'text', 'color': 'primary', 'href': douban_url, 'target': '_blank'}, 'text': '豆瓣链接'}]},
-                    {'component': 'td', 'props': {'class': 'py-1 text-body-2 text-caption', 'style': 'width: 150px'}, 'text': time},
-                ]
-            }
-            not_interested_rows.append(row)
-
         page = []
 
         if not pushed:
@@ -480,85 +451,156 @@ class DoubanUpcoming(_PluginBase):
                 'props': {'variant': 'tonal'},
                 'content': [{
                     'component': 'VCardText',
-                    'props': {'class': 'pa-4 text-center'},
-                    'text': '暂无推送记录'
+                    'props': {'class': 'pa-8 text-center'},
+                    'content': [
+                        {'component': 'VIcon', 'props': {'icon': 'mdi-movie-open', 'size': '48', 'class': 'mb-2 text-primary'}},
+                        {'component': 'div', 'props': {'class': 'text-h6 mb-1'}, 'text': '暂无推送记录'},
+                        {'component': 'div', 'props': {'class': 'text-body-2 text-medium-emphasis'}, 'text': '开启插件后，将在推送时间自动推送豆瓣影视信息'},
+                    ]
                 }]
             })
             return page
 
-        if interested_items:
-            page.append({
-                'component': 'VCard',
-                'props': {'variant': 'tonal', 'class': 'mb-3'},
-                'content': [
-                    {'component': 'VCardTitle', 'props': {'class': 'py-2'}, 'text': f'感兴趣 ({len(interested_items)}条)'},
-                    {
-                        'component': 'VCardText',
-                        'props': {'class': 'pa-2'},
-                        'content': [{
-                            'component': 'VSimpleTable',
-                            'props': {'density': 'compact'},
+        def build_card(item, show_remove=False):
+            title = item.get("title", "")
+            douban_url = item.get("douban_url", "")
+            image_url = item.get("image_url", "")
+            rating = item.get("rating", "")
+            year = item.get("year", "")
+            genres = item.get("genres", "")
+            time = item.get("time", "")
+
+            subtitle_parts = []
+            if year:
+                subtitle_parts.append(year)
+            if genres:
+                subtitle_parts.append(genres)
+            subtitle = " / ".join(subtitle_parts)
+
+            card_content = [
+                {
+                    'component': 'VListItem',
+                    'props': {
+                        'class': 'pa-0',
+                        'href': douban_url,
+                        'target': '_blank',
+                    },
+                    'content': [
+                        {
+                            'component': 'VListItemImg',
+                            'props': {'class': 'me-3', 'cover': True, 'height': 100, 'width': 70, 'src': image_url if image_url else ''},
                             'content': [
                                 {
-                                    'component': 'thead',
-                                    'content': [{
-                                        'component': 'tr',
-                                        'content': [
-                                            {'component': 'th', 'props': {'class': 'text-body-2'}, 'text': '标题'},
-                                            {'component': 'th', 'props': {'class': 'text-body-2', 'style': 'width: 100px'}, 'text': '链接'},
-                                            {'component': 'th', 'props': {'class': 'text-body-2', 'style': 'width: 150px'}, 'text': '时间'},
-                                        ]
-                                    }]
+                                    'component': 'VImg',
+                                    'props': {
+                                        'src': image_url if image_url else '',
+                                        'alt': title,
+                                        'cover': True,
+                                    }
+                                }
+                            ] if image_url else []
+                        },
+                        {
+                            'component': 'VListItemContent',
+                            'props': {'class': 'py-1'},
+                            'content': [
+                                {
+                                    'component': 'VListItemTitle',
+                                    'props': {'class': 'text-subtitle-1 font-weight-medium text-truncate'},
+                                    'text': title
                                 },
                                 {
-                                    'component': 'tbody',
-                                    'content': interested_rows
+                                    'component': 'VListItemSubtitle',
+                                    'props': {'class': 'text-caption text-medium-emphasis mt-1'},
+                                    'text': subtitle if subtitle else '暂无信息'
+                                },
+                            ]
+                        },
+                        {
+                            'component': 'VListItemAction',
+                            'content': [
+                                {
+                                    'component': 'div',
+                                    'props': {'class': 'text-right'},
+                                    'content': [
+                                        {
+                                            'component': 'div',
+                                            'props': {'class': 'text-h6 font-weight-bold text-amber-darken-2'},
+                                            'text': f"{rating}" if rating else '-'
+                                        },
+                                        {
+                                            'component': 'div',
+                                            'props': {'class': 'text-caption text-medium-emphasis mt-1'},
+                                            'text': time.split(' ')[0] if time else ''
+                                        },
+                                    ]
                                 }
                             ]
-                        }]
+                        },
+                    ]
+                }
+            ]
+            return {
+                'component': 'VCard',
+                'props': {
+                    'variant': 'flat',
+                    'class': 'mb-2',
+                    'rounded': 'lg',
+                },
+                'content': card_content
+            }
+
+        if interested_items:
+            page.append({
+                'component': 'div',
+                'props': {'class': 'mb-4'},
+                'content': [
+                    {
+                        'component': 'div',
+                        'props': {'class': 'd-flex align-center mb-3'},
+                        'content': [
+                            {'component': 'VIcon', 'props': {'icon': 'mdi-heart', 'color': 'red', 'size': '20', 'class': 'me-2'}},
+                            {'component': 'div', 'props': {'class': 'text-h6 font-weight-bold'}, 'text': f'感兴趣'},
+                            {'component': 'VChip', 'props': {'size': 'x-small', 'class': 'ms-2', 'color': 'primary', 'variant': 'tonal'}, 'text': f'{len(interested_items)} 条'},
+                        ]
+                    },
+                    {
+                        'component': 'div',
+                        'content': [build_card(item) for item in interested_items]
                     }
                 ]
             })
 
         if not_interested_items:
             page.append({
-                'component': 'VCard',
-                'props': {'variant': 'tonal'},
+                'component': 'div',
                 'content': [
                     {
+                        'component': 'div',
+                        'props': {'class': 'd-flex align-center mb-3'},
+                        'content': [
+                            {'component': 'VIcon', 'props': {'icon': 'mdi-heart-off', 'color': 'grey', 'size': '20', 'class': 'me-2'}},
+                            {'component': 'div', 'props': {'class': 'text-h6 font-weight-bold'}, 'text': f'不感兴趣'},
+                            {'component': 'VChip', 'props': {'size': 'x-small', 'class': 'ms-2', 'variant': 'tonal'}, 'text': f'{len(not_interested_items)} 条'},
+                        ]
+                    },
+                    {
                         'component': 'VExpansionPanels',
+                        'props': {'variant': 'accordion'},
                         'content': [{
                             'component': 'VExpansionPanel',
                             'content': [
                                 {
                                     'component': 'VExpansionPanelTitle',
-                                    'props': {'class': 'py-2'},
-                                    'text': f'不感兴趣 ({len(not_interested_items)}条)'
+                                    'props': {'class': 'px-0'},
+                                    'content': [
+                                        {'component': 'span', 'props': {'class': 'text-body-2 text-medium-emphasis'}, 'text': '点击展开查看'}
+                                    ]
                                 },
                                 {
                                     'component': 'VExpansionPanelText',
-                                    'props': {'class': 'pa-2'},
-                                    'content': [{
-                                        'component': 'VSimpleTable',
-                                        'props': {'density': 'compact'},
-                                        'content': [
-                                            {
-                                                'component': 'thead',
-                                                'content': [{
-                                                    'component': 'tr',
-                                                    'content': [
-                                                        {'component': 'th', 'props': {'class': 'text-body-2'}, 'text': '标题'},
-                                                        {'component': 'th', 'props': {'class': 'text-body-2', 'style': 'width: 100px'}, 'text': '链接'},
-                                                        {'component': 'th', 'props': {'class': 'text-body-2', 'style': 'width: 150px'}, 'text': '时间'},
-                                                    ]
-                                                }]
-                                            },
-                                            {
-                                                'component': 'tbody',
-                                                'content': not_interested_rows
-                                            }
-                                        ]
-                                    }]
+                                    'props': {'class': 'px-0 pb-0'},
+                                    'content': [build_card(item) for item in not_interested_items]
                                 }
                             ]
                         }]
@@ -1310,7 +1352,12 @@ class DoubanUpcoming(_PluginBase):
                 pushed[first.get("douban_id")] = {
                     "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     "interest": None,
-                    "title": first.get("title", "")
+                    "title": first.get("title", ""),
+                    "douban_url": first.get("douban_url", ""),
+                    "image_url": first.get("image_url", ""),
+                    "rating": first.get("rating", ""),
+                    "year": first.get("year", ""),
+                    "genres": first.get("genres", ""),
                 }
                 self._pushed_items = json.dumps(pushed, ensure_ascii=False)
             else:
@@ -1474,13 +1521,18 @@ class DoubanUpcoming(_PluginBase):
 
         logger.info(f"有兴趣: {title} ({year})")
 
-        # 更新已推送记录
+        # 更新已推送记录（保留原有信息，更新interest状态）
         pushed = json.loads(self._pushed_items or "{}")
+        existing = pushed.get(douban_id, {})
         pushed[douban_id] = {
             "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "interest": True,
             "title": title,
             "douban_url": item.get("douban_url", ""),
+            "image_url": item.get("image_url", "") or existing.get("image_url", ""),
+            "rating": item.get("rating", "") or existing.get("rating", ""),
+            "year": item.get("year", "") or existing.get("year", ""),
+            "genres": item.get("genres", "") or existing.get("genres", ""),
         }
         self._pushed_items = json.dumps(pushed, ensure_ascii=False)
 
@@ -1533,11 +1585,16 @@ class DoubanUpcoming(_PluginBase):
                 break
 
         if item:
+            existing = pushed.get(douban_id, {})
             pushed[douban_id] = {
                 "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "interest": False,
                 "title": item.get("title", ""),
                 "douban_url": item.get("douban_url", ""),
+                "image_url": item.get("image_url", "") or existing.get("image_url", ""),
+                "rating": item.get("rating", "") or existing.get("rating", ""),
+                "year": item.get("year", "") or existing.get("year", ""),
+                "genres": item.get("genres", "") or existing.get("genres", ""),
             }
 
         self._pushed_items = json.dumps(pushed, ensure_ascii=False)
@@ -1559,6 +1616,10 @@ class DoubanUpcoming(_PluginBase):
                 "interest": None,
                 "title": next_item.get("title", ""),
                 "douban_url": next_item.get("douban_url", ""),
+                "image_url": next_item.get("image_url", ""),
+                "rating": next_item.get("rating", ""),
+                "year": next_item.get("year", ""),
+                "genres": next_item.get("genres", ""),
             }
             self._pushed_items = json.dumps(pushed, ensure_ascii=False)
             self.__save_config()
