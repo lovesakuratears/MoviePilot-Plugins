@@ -21,7 +21,7 @@ class TmdbHostUpdater(_PluginBase):
     plugin_name = "TMDB Host更新"
     plugin_desc = "定时从CheckTMDB获取最新TMDB hosts，自动更新系统hosts文件，解决TMDB无法访问问题。"
     plugin_icon = "hosts.png"
-    plugin_version = "1.0.13"
+    plugin_version = "1.0.14"
     plugin_author = "lovesakuratears"
     author_url = "https://github.com/cnwikee/CheckTMDB"
     plugin_config_prefix = "tmdbhostupdater_"
@@ -64,6 +64,7 @@ class TmdbHostUpdater(_PluginBase):
     _health_retry_count = 0
     _health_failing = False
     _last_notify_title = ""
+    _last_fetch_compare_time = 0
 
     def init_plugin(self, config: dict = None):
         if config:
@@ -996,6 +997,27 @@ class TmdbHostUpdater(_PluginBase):
 
     def __do_fetch_and_compare(self):
         """拉取远端hosts并与本地对比，根据结果更新或通知"""
+        # 二次确认：只有全部 TMDB 域名不通时才执行
+        results = self.__ping_all()
+        tmdb_results = [r for r in results if r["host"] in self.TMDB_DOMAINS]
+        self._ping_results = json.dumps(results, ensure_ascii=False)
+        if not all(not r["success"] for r in tmdb_results):
+            reachable = [r["host"] for r in tmdb_results if r["success"]]
+            logger.info(f"__do_fetch_and_compare 二次校验：TMDB并非全部不通，可达: {reachable}，跳过")
+            self._health_failing = False
+            self._health_retry_count = 0
+            self.__save_config()
+            return
+
+        # 防抖：同一健康检查周期内不重复拉取（间隔至少为 health_check_interval 分钟的一半）
+        import time
+        now = time.time()
+        min_interval = self._health_check_interval * 30  # 秒
+        if now - self._last_fetch_compare_time < min_interval:
+            logger.info(f"__do_fetch_and_compare 防抖：距上次拉取仅 {now - self._last_fetch_compare_time:.0f} 秒，跳过")
+            return
+        self._last_fetch_compare_time = now
+
         remote_content = self.__fetch_hosts(self._ipv4_url)
         if not remote_content:
             self.__notify("TMDB Host更新 - 拉取失败",
