@@ -21,7 +21,7 @@ class DoubanUpcoming(_PluginBase):
     plugin_name = "刷豆瓣助手"
     plugin_desc = "省去打开豆瓣的过程，提供一条龙订阅推送服务。定时获取豆瓣即将播出/热门影视榜单，支持通过豆瓣UID获取想看列表并自动订阅未上映条目。"
     plugin_icon = "douban.png"
-    plugin_version = "1.9.0"
+    plugin_version = "1.9.1"
     plugin_author = "lovesakuratears"
     author_url = "https://github.com/lovesakuratears/MoviePilot-Plugins"
     plugin_config_prefix = "doubanupcoming_"
@@ -65,6 +65,7 @@ class DoubanUpcoming(_PluginBase):
                 self._pushed_items = "{}"
                 self._current_queue = "[]"
                 self._tracking_items = "[]"
+                self._last_notify_title = ""
                 self._clear_history = False
                 self.__save_config()
                 logger.info("已清除所有历史记录")
@@ -1405,25 +1406,27 @@ class DoubanUpcoming(_PluginBase):
             # 4. 取前N条
             selected = filtered[:self._push_count]
 
-            # 5. 推送到队列并逐条推送
+            # 5. 推送到队列并逐条推送（循环跳过已发送过的条目）
             self._current_queue = json.dumps(selected, ensure_ascii=False)
-            if selected:
-                first = selected[0]
-                self.__send_douban_notification(first)
-                # 记录已推送
-                pushed[first.get("douban_id")] = {
-                    "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    "interest": None,
-                    "title": first.get("title", ""),
-                    "douban_url": first.get("douban_url", ""),
-                    "image_url": first.get("image_url", ""),
-                    "rating": first.get("rating", ""),
-                    "year": first.get("year", ""),
-                    "genres": first.get("genres", ""),
-                }
-                self._pushed_items = json.dumps(pushed, ensure_ascii=False)
-            else:
-                logger.info("筛选后无可用条目")
+            sent = False
+            for item in selected:
+                if self.__send_douban_notification(item):
+                    sent = True
+                    # 记录已推送
+                    pushed[item.get("douban_id")] = {
+                        "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        "interest": None,
+                        "title": item.get("title", ""),
+                        "douban_url": item.get("douban_url", ""),
+                        "image_url": item.get("image_url", ""),
+                        "rating": item.get("rating", ""),
+                        "year": item.get("year", ""),
+                        "genres": item.get("genres", ""),
+                    }
+                    self._pushed_items = json.dumps(pushed, ensure_ascii=False)
+                    break
+            if not sent:
+                logger.info("队列中所有条目均已发送过，跳过")
 
             # 6. 处理豆瓣想看（如果开启）
             self.__process_douban_wish()
@@ -1433,8 +1436,8 @@ class DoubanUpcoming(_PluginBase):
         except Exception as e:
             logger.error(f"推送流程异常: {e}")
 
-    def __send_douban_notification(self, item: Dict):
-        """发送豆瓣影视通知"""
+    def __send_douban_notification(self, item: Dict) -> bool:
+        """发送豆瓣影视通知，返回 True 表示实际发送了通知"""
         title = item.get("title", "未知")
         year = item.get("year", "")
         douban_url = item.get("douban_url", "")
@@ -1450,7 +1453,7 @@ class DoubanUpcoming(_PluginBase):
         douban_id = item.get("douban_id", "")
         if douban_id == self._last_notify_title:
             logger.info(f"通知已发送过，跳过重复: {title}")
-            return
+            return False
 
         # 构建季数信息
         season_info = item.get("season_info", "")
@@ -1553,8 +1556,10 @@ class DoubanUpcoming(_PluginBase):
             )
             logger.info(f"已推送通知: {title}")
             self._last_notify_title = douban_id
+            return True
         except Exception as e:
             logger.warning(f"发送通知失败: {e}")
+            return False
 
     def __api_push(self):
         """手动触发推送"""
@@ -1567,6 +1572,8 @@ class DoubanUpcoming(_PluginBase):
         """清除历史记录"""
         self._pushed_items = "{}"
         self._current_queue = "[]"
+        self._tracking_items = "[]"
+        self._last_notify_title = ""
         self.__save_config()
         return {"code": 0, "message": "历史记录已清除"}
 
@@ -1855,7 +1862,7 @@ class DoubanUpcoming(_PluginBase):
             year = item.get("year", "")
             douban_id = item.get("douban_id", "")
 
-            if not title:
+            if not title and not douban_id:
                 return None
 
             # --- 优先方案：使用 MoviePilot 官方 MediaChain API（参照 doubansync） ---
@@ -1865,35 +1872,36 @@ class DoubanUpcoming(_PluginBase):
 
                 mediachain = MediaChain()
 
-                # 通过豆瓣ID获取TMDB信息
+                # 通过豆瓣ID获取TMDB信息（不需要 title 也能匹配）
                 if douban_id:
                     try:
                         tmdbinfo = mediachain.get_tmdbinfo_by_doubanid(doubanid=douban_id, mtype=MediaType.TV)
                         if tmdbinfo:
-                            return tmdbinfo
+                            return self.__normalize_tmdb_result(tmdbinfo)
                         tmdbinfo = mediachain.get_tmdbinfo_by_doubanid(doubanid=douban_id, mtype=MediaType.MOVIE)
                         if tmdbinfo:
-                            return tmdbinfo
+                            return self.__normalize_tmdb_result(tmdbinfo)
                     except Exception:
                         pass
 
                 # 通过标题+年份识别媒体
-                try:
-                    meta = MetaInfo(title=title, year=year)
-                    mediainfo = mediachain.recognize_media(meta=meta)
-                    if mediainfo and mediainfo.tmdb_id:
-                        return {
-                            "id": mediainfo.tmdb_id,
-                            "name": mediainfo.title,
-                            "title": mediainfo.title,
-                            "first_air_date": str(mediainfo.year) if mediainfo.year else "",
-                            "release_date": str(mediainfo.year) if mediainfo.year else "",
-                            "poster_path": mediainfo.get_poster_image() or "",
-                            "overview": mediainfo.overview or "",
-                            "media_type": mediainfo.type.value if mediainfo.type else "",
-                        }
-                except Exception:
-                    pass
+                if title:
+                    try:
+                        meta = MetaInfo(title=title, year=year)
+                        mediainfo = mediachain.recognize_media(meta=meta)
+                        if mediainfo and mediainfo.tmdb_id:
+                            return {
+                                "id": mediainfo.tmdb_id,
+                                "name": mediainfo.title,
+                                "title": mediainfo.title,
+                                "first_air_date": str(mediainfo.year) if mediainfo.year else "",
+                                "release_date": str(mediainfo.year) if mediainfo.year else "",
+                                "poster_path": mediainfo.get_poster_image() or "",
+                                "overview": mediainfo.overview or "",
+                                "media_type": mediainfo.type.value if mediainfo.type else "",
+                            }
+                    except Exception:
+                        pass
             except Exception as e:
                 logger.debug(f"MediaChain 匹配失败，回退到 TmdbChain 直接搜索: {e}")
 
@@ -1909,43 +1917,67 @@ class DoubanUpcoming(_PluginBase):
                 try:
                     tmdbinfo = tmdbchain.tmdb_info(doubanid=douban_id, mtype=MediaType.TV)
                     if tmdbinfo:
-                        return tmdbinfo
+                        return self.__normalize_tmdb_result(tmdbinfo)
                     tmdbinfo = tmdbchain.tmdb_info(doubanid=douban_id, mtype=MediaType.MOVIE)
                     if tmdbinfo:
-                        return tmdbinfo
+                        return self.__normalize_tmdb_result(tmdbinfo)
                 except Exception:
                     pass
 
             # 按标题搜索TV
-            try:
-                results = tmdbchain.search_tv(title=title, year=year)
-                if results and results.get("results"):
-                    first = results["results"][0]
-                    result_year = (first.get("first_air_date", "") or "")[:4]
-                    if not year or result_year == str(year):
-                        return first
-                    if first.get("name", "") == title:
-                        return first
-            except Exception:
-                pass
+            if title:
+                try:
+                    results = tmdbchain.search_tv(title=title, year=year)
+                    if results and results.get("results"):
+                        first = results["results"][0]
+                        result_year = (first.get("first_air_date", "") or "")[:4]
+                        if not year or result_year == str(year):
+                            return first
+                        if first.get("name", "") == title:
+                            return first
+                except Exception:
+                    pass
 
-            # 按标题搜索Movie
-            try:
-                results = tmdbchain.search_movie(title=title, year=year)
-                if results and results.get("results"):
-                    first = results["results"][0]
-                    result_year = (first.get("release_date", "") or "")[:4]
-                    if not year or result_year == str(year):
-                        return first
-                    if first.get("title", "") == title:
-                        return first
-            except Exception:
-                pass
+                # 按标题搜索Movie
+                try:
+                    results = tmdbchain.search_movie(title=title, year=year)
+                    if results and results.get("results"):
+                        first = results["results"][0]
+                        result_year = (first.get("release_date", "") or "")[:4]
+                        if not year or result_year == str(year):
+                            return first
+                        if first.get("title", "") == title:
+                            return first
+                except Exception:
+                    pass
 
             return None
         except Exception as e:
             logger.debug(f"TMDB匹配失败: {e}")
             return None
+
+    def __normalize_tmdb_result(self, tmdbinfo) -> Dict:
+        """将 TMDB API 返回的各种格式统一为 dict，确保 poster_path 等字段可访问"""
+        if isinstance(tmdbinfo, dict):
+            return tmdbinfo
+        # 尝试从对象属性中提取
+        result = {}
+        for field in ["id", "poster_path", "overview", "first_air_date", "release_date",
+                       "name", "title", "media_type", "number_of_episodes", "number_of_seasons",
+                       "episode_run_time"]:
+            if hasattr(tmdbinfo, field):
+                result[field] = getattr(tmdbinfo, field)
+        # 兼容 MediaInfo 对象
+        if hasattr(tmdbinfo, "tmdb_id") and "id" not in result:
+            result["id"] = tmdbinfo.tmdb_id
+        if hasattr(tmdbinfo, "get_poster_image") and "poster_path" not in result:
+            try:
+                poster = tmdbinfo.get_poster_image()
+                if poster:
+                    result["poster_path"] = poster
+            except Exception:
+                pass
+        return result if result else tmdbinfo
 
     def __try_douban_subscribe(self, item: Dict) -> bool:
         """尝试豆瓣订阅：通过 SubscribeChain 添加订阅（先检测是否已存在）"""
