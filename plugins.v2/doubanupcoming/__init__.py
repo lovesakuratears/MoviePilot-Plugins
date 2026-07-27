@@ -21,7 +21,7 @@ class DoubanUpcoming(_PluginBase):
     plugin_name = "刷豆瓣助手"
     plugin_desc = "省去打开豆瓣的过程，提供一条龙订阅推送服务。定时获取豆瓣即将播出/热门影视榜单，支持通过豆瓣UID获取想看列表并自动订阅未上映条目。"
     plugin_icon = "douban.png"
-    plugin_version = "1.9.1"
+    plugin_version = "1.9.2"
     plugin_author = "lovesakuratears"
     author_url = "https://github.com/lovesakuratears/MoviePilot-Plugins"
     plugin_config_prefix = "doubanupcoming_"
@@ -1441,7 +1441,6 @@ class DoubanUpcoming(_PluginBase):
         title = item.get("title", "未知")
         year = item.get("year", "")
         douban_url = item.get("douban_url", "")
-        rating = item.get("rating", "")
         region = item.get("region", "")
         genres = item.get("genres", "")
         director = item.get("director", "")
@@ -1462,6 +1461,9 @@ class DoubanUpcoming(_PluginBase):
             if season_match:
                 season_info = season_match.group(1)
 
+        # 从标题中移除季数信息，避免重复显示（如 "谜探路德维希 第二季" → "谜探路德维希"）
+        display_title = re.sub(r'\s*(S\d+|第[一二三四五六七八九十\d]+[季部])\s*', ' ', title).strip()
+
         # 主演行
         cast_line = f"{year} / {region} / {genres} / {director} / {actors}" if year else ""
 
@@ -1478,14 +1480,11 @@ class DoubanUpcoming(_PluginBase):
             if episode_duration:
                 broadcast_line += f" / 单集片长{episode_duration}分钟"
 
-        # 播放平台（优先从缓存的TMDB数据获取，否则调用接口）
-        streaming_platform = item.get("streaming_platform", "")
-        if not streaming_platform:
-            streaming_platform = self.__fetch_streaming_platform(title, year)
-
-        # 尝试匹配TMDB获取TMDB链接和海报
+        # ====== 核心优化：先匹配 TMDB 一次，复用结果（海报/链接/平台），避免重复调用 ======
         tmdb_url = ""
         tmdb_image = image_url
+        streaming_platform = item.get("streaming_platform", "")
+        tmdb_matched = None
         try:
             tmdb_matched = self.__try_tmdb_match(item)
             if tmdb_matched:
@@ -1496,20 +1495,22 @@ class DoubanUpcoming(_PluginBase):
                     # 优先使用TMDB的海报
                     if tmdb_matched.get("poster_path"):
                         tmdb_image = f"https://image.tmdb.org/t/p/w500{tmdb_matched.get('poster_path')}"
-                    # 播放平台也优先从TMDB获取
+                    # 播放平台优先从 TMDB watch/providers 获取（直接用 TMDB ID，不重复搜索）
                     if not streaming_platform:
-                        tp_platform = tmdb_matched.get("streaming_platform", "")
-                        if tp_platform:
-                            streaming_platform = tp_platform
+                        streaming_platform = self.__fetch_streaming_platform_by_tmdb_id(tmdb_id, media_type)
         except Exception:
             pass
+
+        # 播放平台回退：TMDB 未获取到时走搜索
+        if not streaming_platform:
+            streaming_platform = self.__fetch_streaming_platform(title, year)
 
         # 链接优先使用TMDB链接，否则使用豆瓣链接
         link_url = tmdb_url if tmdb_url else douban_url
 
-        # 构建通知文本（评分行由播放平台代替）
+        # 构建通知文本
         text_parts = []
-        text_parts.append(f"🎞 {title} ({year}) {season_info}".strip())
+        text_parts.append(f"🎞 {display_title} ({year}) {season_info}".strip())
         if streaming_platform:
             text_parts.append(f"✨ 播放平台：{streaming_platform}")
         if cast_line:
@@ -2072,6 +2073,72 @@ class DoubanUpcoming(_PluginBase):
             logger.info(f"已发送开播提醒通知: {title}")
         except Exception as e:
             logger.warning(f"发送开播提醒通知失败: {e}")
+
+    def __fetch_streaming_platform_by_tmdb_id(self, tmdb_id: int, media_type: str) -> str:
+        """通过 TMDB ID 直接获取播放平台（不经过搜索，不触发 MetaInfo 创建，避免日志污染）"""
+        if not tmdb_id:
+            return ""
+        try:
+            from app.core.config import settings
+            api_key = getattr(settings, "TMDB_API_KEY", "")
+            if not api_key:
+                return ""
+            tmdb_domain = getattr(settings, "TMDB_DOMAIN", "api.themoviedb.org")
+            provider_url = f"https://{tmdb_domain}/3/{media_type}/{tmdb_id}/watch/providers?api_key={api_key}"
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            }
+            resp = requests.get(provider_url, headers=headers, timeout=10)
+            resp.raise_for_status()
+            data = resp.json()
+
+            results = data.get("results", {})
+            if not results:
+                return ""
+
+            priority_regions = ["CN", "US"]
+            provider_names = []
+            provider_keywords_map = {
+                "腾讯视频": ["Tencent Video", "tencent", "腾讯视频", "腾讯"],
+                "爱奇艺": ["iQIYI", "iqiyi", "爱奇艺"],
+                "优酷": ["Youku", "youku", "优酷"],
+                "芒果TV": ["Mango TV", "mgtv", "芒果TV", "芒果"],
+                "B站": ["Bilibili", "bilibili", "哔哩哔哩", "B站"],
+                "Netflix": ["Netflix", "网飞", "奈飞"],
+                "Disney+": ["Disney Plus", "Disney+", "迪士尼+"],
+                "HBO": ["HBO Max", "HBO"],
+                "Amazon": ["Amazon Prime Video", "Amazon Prime", "Prime Video", "亚马逊"],
+                "Hulu": ["Hulu"],
+                "Apple TV+": ["Apple TV Plus", "Apple TV+", "苹果tv+"],
+                "Paramount+": ["Paramount Plus", "Paramount+", "派拉蒙+"],
+            }
+
+            for region in priority_regions:
+                region_data = results.get(region, {})
+                flatrate = region_data.get("flatrate", [])
+                if flatrate:
+                    for prov in flatrate:
+                        prov_name = prov.get("provider_name", "")
+                        matched = False
+                        for std_name, keywords in provider_keywords_map.items():
+                            for kw in keywords:
+                                if kw.lower() in prov_name.lower() or prov_name.lower() == kw.lower():
+                                    if std_name not in provider_names:
+                                        provider_names.append(std_name)
+                                    matched = True
+                                    break
+                            if matched:
+                                break
+                        if not matched and prov_name:
+                            provider_names.append(prov_name)
+                    break
+
+            if provider_names:
+                return " / ".join(provider_names)
+            return ""
+        except Exception as e:
+            logger.debug(f"通过 TMDB ID 获取播放平台失败 ({tmdb_id}): {e}")
+            return ""
 
     def __fetch_streaming_platform_from_tmdb(self, title: str, year: str = "") -> str:
         """从 TMDB 获取播放平台信息（优先）"""
