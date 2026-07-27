@@ -20,7 +20,7 @@ class DoubanUpcoming(_PluginBase):
     plugin_name = "刷豆瓣助手"
     plugin_desc = "省去打开豆瓣的过程，提供一条龙订阅推送服务。定时获取豆瓣即将播出/热门影视榜单，支持通过豆瓣UID获取想看列表并自动订阅未上映条目。"
     plugin_icon = "douban.png"
-    plugin_version = "1.2.0"
+    plugin_version = "1.3.0"
     plugin_author = "lovesakuratears"
     author_url = "https://github.com/lovesakuratears/MoviePilot-Plugins"
     plugin_config_prefix = "doubanupcoming_"
