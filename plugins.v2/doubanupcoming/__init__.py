@@ -1419,9 +1419,6 @@ class DoubanUpcoming(_PluginBase):
             if season_match:
                 season_info = season_match.group(1)
 
-        # 评分显示
-        rating_text = f"{rating}/10" if rating else "暂无评分"
-
         # 主演行
         cast_line = f"{year} / {region} / {genres} / {director} / {actors}" if year else ""
 
@@ -1432,7 +1429,7 @@ class DoubanUpcoming(_PluginBase):
 
         broadcast_line = ""
         if release_date:
-            broadcast_line = f"播出时间：{release_date}({region})首播"
+            broadcast_line = f"{release_date}({region})首播"
             if episode_count:
                 broadcast_line += f" / 共{episode_count}集"
             if episode_duration:
@@ -1442,7 +1439,6 @@ class DoubanUpcoming(_PluginBase):
         streaming_platform = item.get("streaming_platform", "")
         if not streaming_platform:
             streaming_platform = self.__fetch_streaming_platform(title, year)
-        platform_line = f"播放平台：{streaming_platform}" if streaming_platform else ""
 
         # 尝试匹配TMDB获取TMDB链接和海报
         tmdb_url = ""
@@ -1462,23 +1458,21 @@ class DoubanUpcoming(_PluginBase):
                         tp_platform = tmdb_matched.get("streaming_platform", "")
                         if tp_platform:
                             streaming_platform = tp_platform
-                            platform_line = f"播放平台：{streaming_platform}"
         except Exception:
             pass
 
         # 链接优先使用TMDB链接，否则使用豆瓣链接
         link_url = tmdb_url if tmdb_url else douban_url
 
-        # 构建通知文本（按用户期望的格式）
+        # 构建通知文本（评分行由播放平台代替）
         text_parts = []
         text_parts.append(f"🎞 {title} ({year}) {season_info}".strip())
-        text_parts.append(f"✨ 评分：{rating_text}")
-        if platform_line:
-            text_parts.append(f"播放平台：{platform_line.replace('播放平台：', '')}")
+        if streaming_platform:
+            text_parts.append(f"✨ 播放平台：{streaming_platform}")
         if cast_line:
             text_parts.append(f"👾 主演：{cast_line}")
         if broadcast_line:
-            text_parts.append(f"播出时间：{broadcast_line.replace('播出时间：', '')}")
+            text_parts.append(f"播出时间：{broadcast_line}")
         text_parts.append(f"🔗 链接：{link_url}")
 
         if summary:
