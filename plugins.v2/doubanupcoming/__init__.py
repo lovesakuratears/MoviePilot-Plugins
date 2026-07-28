@@ -1,4 +1,4 @@
-﻿import json
+import json
 import re
 from typing import List, Tuple, Dict, Any, Optional
 from datetime import datetime, timedelta
@@ -21,7 +21,7 @@ class DoubanUpcoming(_PluginBase):
     plugin_name = "刷豆瓣助手"
     plugin_desc = "省去打开豆瓣的过程，提供一条龙订阅推送服务。定时获取豆瓣即将播出/热门影视榜单，支持通过豆瓣UID获取想看列表并自动订阅未上映条目。"
     plugin_icon = "douban.png"
-    plugin_version = "1.9.4"
+    plugin_version = "1.9.6"
     plugin_author = "lovesakuratears"
     author_url = "https://github.com/lovesakuratears/MoviePilot-Plugins"
     plugin_config_prefix = "doubanupcoming_"
@@ -45,6 +45,7 @@ class DoubanUpcoming(_PluginBase):
     _current_queue = "[]"
     _last_notify_title = ""
     _wish_last_processed = ""
+    _last_image_refresh_time = ""
 
     def init_plugin(self, config: dict = None):
         if config:
@@ -74,6 +75,7 @@ class DoubanUpcoming(_PluginBase):
             self._tracking_items = config.get("tracking_items", "[]")
             self._current_queue = config.get("current_queue", "[]")
             self._last_notify_title = config.get("last_notify_title", "")
+            self._last_image_refresh_time = config.get("last_image_refresh_time", "")
 
             # 如果开启了立即执行，重置开关并触发推送（仅在插件启用时执行）
             if self._run_immediately:
@@ -107,7 +109,8 @@ class DoubanUpcoming(_PluginBase):
             "pushed_items": self._pushed_items,
             "tracking_items": self._tracking_items,
             "current_queue": self._current_queue,
-            "last_notify_title": self._last_notify_title
+            "last_notify_title": self._last_notify_title,
+            "last_image_refresh_time": self._last_image_refresh_time
         })
 
     def get_form(self) -> Tuple[List[dict], Dict[str, Any]]:
@@ -419,6 +422,9 @@ class DoubanUpcoming(_PluginBase):
         """
         拼装插件详情页面：网格布局，感兴趣/不感兴趣分组，不感兴趣折叠
         """
+        # 先刷新缺失的海报图片
+        self.__refresh_missing_images()
+
         pushed = {}
         try:
             pushed = json.loads(self._pushed_items or "{}")
@@ -527,16 +533,16 @@ class DoubanUpcoming(_PluginBase):
                                 'component': 'div',
                                 'content': [
                                     {
-                                        'component': 'VImg',
-                                        'props': {
-                                            'src': image_url,
-                                            'height': 120,
-                                            'width': 80,
-                                            'aspect-ratio': '2/3',
-                                            'class': 'object-cover shadow ring-gray-500',
-                                            'cover': True
-                                        }
-                                    }
+                                'component': 'VImg',
+                                'props': {
+                                    'src': image_url if image_url else 'https://img9.doubanio.com/f/frodo/18e2b616f8e3a9e3c7d6e3e3c7d6e3e3.jpg',
+                                    'height': 120,
+                                    'width': 80,
+                                    'aspect-ratio': '2/3',
+                                    'class': 'object-cover shadow ring-gray-500',
+                                    'cover': True
+                                }
+                            }
                                 ]
                             },
                             {
@@ -765,6 +771,73 @@ class DoubanUpcoming(_PluginBase):
             },
         ]
 
+    def _get_best_image_url(self, item: Dict) -> str:
+        """获取最佳海报URL：优先 item 中的 image_url，其次 TMDB 缓存，最后占位图"""
+        image_url = item.get("image_url", "")
+        if image_url:
+            return image_url
+        tmdb_poster = item.get("_tmdb_poster", "")
+        if tmdb_poster:
+            return f"https://image.tmdb.org/t/p/w500{tmdb_poster}"
+        return "https://img9.doubanio.com/f/frodo/18e2b616f8e3a9e3c7d6e3e3c7d6e3e3.jpg"
+
+    def __refresh_missing_images(self):
+        """补充历史记录中缺失的海报图片（有冷却时间+批量限制，避免CPU峰值）"""
+        try:
+            # 冷却时间：30分钟内不重复刷新
+            import time as _time
+            now = _time.time()
+            if self._last_image_refresh_time:
+                try:
+                    last_ts = float(self._last_image_refresh_time)
+                    if now - last_ts < 1800:  # 30分钟
+                        return
+                except (ValueError, TypeError):
+                    pass
+
+            pushed = json.loads(self._pushed_items or "{}")
+            if not pushed:
+                return
+
+            # 收集缺失图片的条目
+            missing = []
+            for douban_id, info in pushed.items():
+                if info.get("image_url"):
+                    continue
+                if not douban_id:
+                    continue
+                missing.append((douban_id, info))
+
+            if not missing:
+                return
+
+            # 每次最多处理5条，避免一次性大量API调用
+            batch = missing[:5]
+            updated = False
+            for douban_id, info in batch:
+                try:
+                    _time.sleep(0.5)  # 每条间隔0.5秒
+                    detail = self.__fetch_douban_detail(douban_id)
+                    if detail and detail.get("image_url"):
+                        info["image_url"] = detail["image_url"]
+                        if not info.get("year") and detail.get("release_date"):
+                            info["year"] = detail["release_date"][:4]
+                        if not info.get("genres") and detail.get("genres"):
+                            info["genres"] = detail["genres"]
+                        if not info.get("release_date") and detail.get("release_date"):
+                            info["release_date"] = detail["release_date"]
+                        updated = True
+                        logger.debug(f"补充海报: {info.get('title', douban_id)}")
+                except Exception:
+                    pass
+
+            if updated:
+                self._pushed_items = json.dumps(pushed, ensure_ascii=False)
+                self._last_image_refresh_time = str(now)
+                self.__save_config()
+        except Exception as e:
+            logger.debug(f"补充海报失败: {e}")
+
     def __fetch_coming(self, sort_by: str = "hot", count: int = 10) -> List[Dict]:
         url = f"https://rsshub.ddsrem.com/douban/tv/coming/{sort_by}/{count}"
         results = []
@@ -825,7 +898,10 @@ class DoubanUpcoming(_PluginBase):
 
             # 只对前 push_count 条（即将推送的）抓取详情，减少网络请求
             detail_count = min(self._push_count if hasattr(self, '_push_count') else 10, len(results))
+            import time as _time
             for i in range(detail_count):
+                if i > 0:
+                    _time.sleep(0.5)  # 每条详情获取间隔0.5秒，避免CPU峰值
                 item = results[i]
                 douban_id = item.get("douban_id", "")
                 if douban_id:
@@ -852,6 +928,11 @@ class DoubanUpcoming(_PluginBase):
                                 item["director"] = detail["director"]
                             if detail.get("actors") and not item.get("actors"):
                                 item["actors"] = detail["actors"]
+                            # 缓存 TMDB 信息，避免 __send_douban_notification 重复调用 __try_tmdb_match
+                            if detail.get("_tmdb_id"):
+                                item["_tmdb_id"] = detail["_tmdb_id"]
+                                item["_tmdb_poster"] = detail.get("_tmdb_poster", "")
+                                item["_tmdb_media_type"] = detail.get("_tmdb_media_type", "")
                     except Exception as e:
                         logger.warning(f"获取 {item.get('title')} 详情失败: {e}")
 
@@ -1110,6 +1191,9 @@ class DoubanUpcoming(_PluginBase):
             "genres": "",
             "director": "",
             "actors": "",
+            "_tmdb_id": None,
+            "_tmdb_poster": "",
+            "_tmdb_media_type": "",
         }
         if not douban_id:
             return detail
@@ -1118,9 +1202,12 @@ class DoubanUpcoming(_PluginBase):
         try:
             tmdb_info = self.__try_tmdb_match({"douban_id": douban_id})
             if tmdb_info:
-                # 海报
+                # 缓存 TMDB 关键信息，后续 __send_douban_notification 可直接复用，避免重复调用 __try_tmdb_match
+                detail["_tmdb_id"] = tmdb_info.get("id")
                 if tmdb_info.get("poster_path"):
                     detail["image_url"] = f"https://image.tmdb.org/t/p/w500{tmdb_info.get('poster_path')}"
+                    detail["_tmdb_poster"] = tmdb_info.get("poster_path")
+                detail["_tmdb_media_type"] = "tv" if tmdb_info.get("first_air_date") else "movie"
                 # 简介
                 if tmdb_info.get("overview"):
                     detail["summary"] = tmdb_info["overview"][:500]
@@ -1139,7 +1226,6 @@ class DoubanUpcoming(_PluginBase):
                         detail["episode_duration"] = str(runtimes[0])
                     elif isinstance(runtimes, (int, float)):
                         detail["episode_duration"] = str(runtimes)
-                # 类型（TMDB 返回的是 genre_ids 或 genres 列表，后续从豆瓣补充中文名）
                 logger.debug(f"从TMDB获取到 {douban_id} 的元数据: date={detail['release_date']}, episodes={detail['episode_count']}")
         except Exception as e:
             logger.debug(f"从TMDB获取元数据失败 ({douban_id}): {e}")
@@ -1252,16 +1338,37 @@ class DoubanUpcoming(_PluginBase):
             # 如果未开启自动订阅，则只记录历史不执行订阅/追踪操作
             if not self._auto_subscribe_wish:
                 logger.info("未开启自动订阅，仅记录豆瓣想看列表历史")
+                import time as _time
                 pushed = json.loads(self._pushed_items or "{}")
                 for item in items:
                     douban_id = item.get("douban_id", "")
                     if not douban_id or douban_id in pushed:
                         continue
+                    # 获取详情以补充海报（带延迟避免CPU峰值）
+                    if not item.get("image_url"):
+                        _time.sleep(0.5)
+                        try:
+                            detail = self.__fetch_douban_detail(douban_id)
+                            if detail:
+                                if detail.get("image_url"):
+                                    item["image_url"] = detail["image_url"]
+                                if detail.get("_tmdb_poster"):
+                                    item["_tmdb_poster"] = detail["_tmdb_poster"]
+                                if detail.get("genres") and not item.get("genres"):
+                                    item["genres"] = detail["genres"]
+                                if detail.get("release_date") and not item.get("release_date"):
+                                    item["release_date"] = detail["release_date"]
+                        except Exception:
+                            pass
                     pushed[douban_id] = {
                         "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                         "interest": True,
                         "title": item.get("title", ""),
                         "douban_url": item.get("douban_url", ""),
+                        "image_url": self._get_best_image_url(item),
+                        "year": item.get("year", ""),
+                        "genres": item.get("genres", ""),
+                        "release_date": item.get("release_date", ""),
                         "source": "douban_wish",
                         "auto_subscribed": False,
                     }
@@ -1275,6 +1382,20 @@ class DoubanUpcoming(_PluginBase):
             subscribed_count = 0
             tracked_count = 0
 
+            def _make_pushed_entry(it):
+                """构建 pushed 记录基础字段"""
+                return {
+                    "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "interest": True,
+                    "title": it.get("title", ""),
+                    "douban_url": it.get("douban_url", ""),
+                    "image_url": self._get_best_image_url(it),
+                    "year": it.get("year", ""),
+                    "genres": it.get("genres", ""),
+                    "release_date": it.get("release_date", ""),
+                    "source": "douban_wish",
+                }
+
             for item in items:
                 douban_id = item.get("douban_id", "")
                 if not douban_id:
@@ -1287,59 +1408,54 @@ class DoubanUpcoming(_PluginBase):
                 title = item.get("title", "")
                 year = item.get("year", "")
 
-                # 尝试 TMDB 匹配
+                # 尝试 TMDB 匹配（添加短暂延迟避免CPU峰值）
+                import time as _time
+                _time.sleep(0.3)
                 tmdb_matched = self.__try_tmdb_match(item)
 
                 if tmdb_matched:
                     tmdb_info = tmdb_matched
+                    # 缓存 TMDB 海报信息到 item，确保 _get_best_image_url 可用
+                    item["_tmdb_id"] = tmdb_info.get("id")
+                    if tmdb_info.get("poster_path"):
+                        item["_tmdb_poster"] = tmdb_info.get("poster_path")
+                        if not item.get("image_url"):
+                            item["image_url"] = f"https://image.tmdb.org/t/p/w500{tmdb_info.get('poster_path')}"
                     first_air_date = tmdb_info.get("first_air_date", "") or tmdb_info.get("release_date", "")
 
                     if first_air_date and len(first_air_date) >= 10:
                         # 有精确时间：添加订阅
                         self.__subscribe_tmdb(tmdb_info)
-                        pushed[douban_id] = {
-                            "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                            "interest": True,
-                            "title": title,
-                            "douban_url": item.get("douban_url", ""),
-                            "source": "douban_wish",
-                        }
+                        pushed[douban_id] = _make_pushed_entry(item)
                         subscribed_count += 1
                         logger.info(f"豆瓣想看自动订阅: {title}")
                     else:
                         # 无精确时间：本地追踪
                         self.__add_tracking(item, tmdb_info)
-                        pushed[douban_id] = {
-                            "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                            "interest": True,
-                            "title": title,
-                            "douban_url": item.get("douban_url", ""),
-                            "source": "douban_wish",
-                        }
+                        pushed[douban_id] = _make_pushed_entry(item)
                         tracked_count += 1
                         logger.info(f"豆瓣想看加入追踪: {title}")
                 else:
-                    # TMDB 匹配失败，尝试豆瓣订阅
+                    # TMDB 匹配失败，尝试获取详情补充海报
+                    if not item.get("image_url"):
+                        _time.sleep(0.3)
+                        try:
+                            detail = self.__fetch_douban_detail(douban_id)
+                            if detail:
+                                if detail.get("image_url"):
+                                    item["image_url"] = detail["image_url"]
+                                if detail.get("_tmdb_poster"):
+                                    item["_tmdb_poster"] = detail["_tmdb_poster"]
+                        except Exception:
+                            pass
                     douban_subscribed = self.__try_douban_subscribe(item)
                     if douban_subscribed:
-                        pushed[douban_id] = {
-                            "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                            "interest": True,
-                            "title": title,
-                            "douban_url": item.get("douban_url", ""),
-                            "source": "douban_wish",
-                        }
+                        pushed[douban_id] = _make_pushed_entry(item)
                         subscribed_count += 1
                     else:
                         # 保存到本地追踪
                         self.__add_tracking(item, None)
-                        pushed[douban_id] = {
-                            "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                            "interest": True,
-                            "title": title,
-                            "douban_url": item.get("douban_url", ""),
-                            "source": "douban_wish",
-                        }
+                        pushed[douban_id] = _make_pushed_entry(item)
                         tracked_count += 1
 
                 processed_count += 1
@@ -1442,17 +1558,18 @@ class DoubanUpcoming(_PluginBase):
             for item in selected:
                 if self.__send_douban_notification(item):
                     sent = True
-                    # 记录已推送
+                    # 记录已推送（优先使用 TMDB 缓存海报）
                     pushed[item.get("douban_id")] = {
                         "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                         "interest": None,
                         "title": item.get("title", ""),
                         "douban_url": item.get("douban_url", ""),
-                        "image_url": item.get("image_url", ""),
+                        "image_url": self._get_best_image_url(item),
                         "rating": item.get("rating", ""),
                         "year": item.get("year", ""),
                         "genres": item.get("genres", ""),
                         "release_date": item.get("release_date", ""),
+                        "source": item.get("source", ""),
                     }
                     self._pushed_items = json.dumps(pushed, ensure_ascii=False)
                     break
@@ -1495,9 +1612,6 @@ class DoubanUpcoming(_PluginBase):
         # 从标题中移除季数信息，避免重复显示（如 "谜探路德维希 第二季" → "谜探路德维希"）
         display_title = re.sub(r'\s*(S\d+|第[一二三四五六七八九十\d]+[季部])\s*', ' ', title).strip()
 
-        # 主演行
-        cast_line = f"{year} / {region} / {genres} / {director} / {actors}" if year else ""
-
         # 播出时间
         release_date = item.get("release_date", "")
         episode_count = item.get("episode_count", "")
@@ -1511,30 +1625,40 @@ class DoubanUpcoming(_PluginBase):
             if episode_duration:
                 broadcast_line += f" / 单集片长{episode_duration}分钟"
 
-        # ====== 核心优化：先匹配 TMDB 一次，复用结果（海报/链接/平台），避免重复调用 ======
-        # 使用剥离季数的标题进行 TMDB 匹配，提高搜索准确率
+        # ====== 核心优化：优先使用 detail 阶段缓存的 TMDB 信息，避免重复调用 __try_tmdb_match（大幅降低CPU） ======
         tmdb_url = ""
         tmdb_image = image_url
         streaming_platform = item.get("streaming_platform", "")
         tmdb_matched = None
-        try:
-            # 用 display_title 替换原 title 进行 TMDB 匹配，避免季数干扰搜索
-            tmdb_item = dict(item)
-            tmdb_item["title"] = display_title
-            tmdb_matched = self.__try_tmdb_match(tmdb_item)
-            if tmdb_matched:
-                tmdb_id = tmdb_matched.get("id", "")
-                if tmdb_id:
-                    media_type = "tv" if tmdb_matched.get("first_air_date") else "movie"
-                    tmdb_url = f"https://www.themoviedb.org/{media_type}/{tmdb_id}"
-                    # 优先使用TMDB的海报
-                    if tmdb_matched.get("poster_path"):
-                        tmdb_image = f"https://image.tmdb.org/t/p/w500{tmdb_matched.get('poster_path')}"
-                    # 播放平台优先从 TMDB watch/providers 获取（直接用 TMDB ID，不重复搜索）
-                    if not streaming_platform:
-                        streaming_platform = self.__fetch_streaming_platform_by_tmdb_id(tmdb_id, media_type)
-        except Exception:
-            pass
+
+        cached_tmdb_id = item.get("_tmdb_id")
+        if cached_tmdb_id:
+            # 复用 detail 阶段缓存的 TMDB 信息，跳过昂贵的 __try_tmdb_match 调用
+            tmdb_id = cached_tmdb_id
+            media_type = item.get("_tmdb_media_type", "tv")
+            tmdb_url = f"https://www.themoviedb.org/{media_type}/{tmdb_id}"
+            cached_poster = item.get("_tmdb_poster", "")
+            if cached_poster:
+                tmdb_image = f"https://image.tmdb.org/t/p/w500{cached_poster}"
+            if not streaming_platform:
+                streaming_platform = self.__fetch_streaming_platform_by_tmdb_id(tmdb_id, media_type)
+        else:
+            # 缓存未命中，回退到完整 TMDB 匹配
+            try:
+                tmdb_item = dict(item)
+                tmdb_item["title"] = display_title
+                tmdb_matched = self.__try_tmdb_match(tmdb_item)
+                if tmdb_matched:
+                    tmdb_id = tmdb_matched.get("id", "")
+                    if tmdb_id:
+                        media_type = "tv" if tmdb_matched.get("first_air_date") else "movie"
+                        tmdb_url = f"https://www.themoviedb.org/{media_type}/{tmdb_id}"
+                        if tmdb_matched.get("poster_path"):
+                            tmdb_image = f"https://image.tmdb.org/t/p/w500{tmdb_matched.get('poster_path')}"
+                        if not streaming_platform:
+                            streaming_platform = self.__fetch_streaming_platform_by_tmdb_id(tmdb_id, media_type)
+            except Exception:
+                pass
 
         # 播放平台回退：TMDB 未获取到时走搜索（使用剥离季数的标题，提高搜索准确率）
         if not streaming_platform:
@@ -1543,15 +1667,26 @@ class DoubanUpcoming(_PluginBase):
         # 链接优先使用TMDB链接，否则使用豆瓣链接
         link_url = tmdb_url if tmdb_url else douban_url
 
-        # 构建通知文本
+        # 获取来源榜单标识
+        source_label = item.get("source", "")
+
+        # 构建富文本通知
         text_parts = []
+        if source_label:
+            text_parts.append(f"📋 榜单：{source_label}")
         text_parts.append(f"🎞 {display_title} ({year}) {season_info}".strip())
+        if region:
+            text_parts.append(f"📍 地区：{region}")
+        if genres:
+            text_parts.append(f"🎭 类型：{genres}")
+        if director:
+            text_parts.append(f"🎬 导演：{director}")
+        if actors:
+            text_parts.append(f"👾 主演：{actors}")
         if streaming_platform:
             text_parts.append(f"✨ 播放平台：{streaming_platform}")
-        if cast_line:
-            text_parts.append(f"👾 主演：{cast_line}")
         if broadcast_line:
-            text_parts.append(f"播出时间：{broadcast_line}")
+            text_parts.append(f"📅 播出时间：{broadcast_line}")
         text_parts.append(f"🔗 链接：{link_url}")
 
         if summary:
@@ -1581,16 +1716,16 @@ class DoubanUpcoming(_PluginBase):
 
         # 发送通知
         try:
+            title_prefix = f"【{source_label}】" if source_label else "豆瓣 - "
             self.post_message(
                 mtype=NotificationType.Plugin,
-                title=f"豆瓣 - {title}",
+                title=f"{title_prefix}{title}",
                 text=notify_text,
                 image=tmdb_image if tmdb_image else None,
                 link=douban_url,
                 actions=actions,
                 buttons=buttons
             )
-            source_label = item.get("source", "")
             logger.info(f"已推送通知 [{source_label}]: {title}")
             self._last_notify_title = douban_id
             return True
@@ -1668,7 +1803,7 @@ class DoubanUpcoming(_PluginBase):
             "interest": True,
             "title": title,
             "douban_url": item.get("douban_url", ""),
-            "image_url": item.get("image_url", "") or existing.get("image_url", ""),
+            "image_url": self._get_best_image_url(item) or existing.get("image_url", ""),
             "rating": item.get("rating", "") or existing.get("rating", ""),
             "year": item.get("year", "") or existing.get("year", ""),
             "genres": item.get("genres", "") or existing.get("genres", ""),
@@ -1719,7 +1854,7 @@ class DoubanUpcoming(_PluginBase):
                 "interest": None,
                 "title": next_item.get("title", ""),
                 "douban_url": next_item.get("douban_url", ""),
-                "image_url": next_item.get("image_url", ""),
+                "image_url": self._get_best_image_url(next_item),
                 "rating": next_item.get("rating", ""),
                 "year": next_item.get("year", ""),
                 "genres": next_item.get("genres", ""),
@@ -1755,7 +1890,7 @@ class DoubanUpcoming(_PluginBase):
                 "interest": False,
                 "title": item.get("title", ""),
                 "douban_url": item.get("douban_url", ""),
-                "image_url": item.get("image_url", "") or existing.get("image_url", ""),
+                "image_url": self._get_best_image_url(item) or existing.get("image_url", ""),
                 "rating": item.get("rating", "") or existing.get("rating", ""),
                 "year": item.get("year", "") or existing.get("year", ""),
                 "genres": item.get("genres", "") or existing.get("genres", ""),
@@ -1781,7 +1916,7 @@ class DoubanUpcoming(_PluginBase):
                 "interest": None,
                 "title": next_item.get("title", ""),
                 "douban_url": next_item.get("douban_url", ""),
-                "image_url": next_item.get("image_url", ""),
+                "image_url": self._get_best_image_url(next_item),
                 "rating": next_item.get("rating", ""),
                 "year": next_item.get("year", ""),
                 "genres": next_item.get("genres", ""),
