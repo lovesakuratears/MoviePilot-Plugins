@@ -28,7 +28,7 @@ class SubscriptionReminder(_PluginBase):
     # 插件图标
     plugin_icon = "douban.png"
     # 插件版本
-    plugin_version = "1.0.2"
+    plugin_version = "1.0.3"
     # 插件作者
     plugin_author = "lovesakuratears"
     # 作者主页
@@ -544,19 +544,35 @@ class SubscriptionReminder(_PluginBase):
     # ========== 订阅数据获取 ==========
 
     def __get_all_subscriptions(self) -> List[Dict]:
-        """获取所有活跃订阅"""
+        """获取所有活跃订阅，包含状态和集数信息"""
         try:
             subs = SubscribeOper().list()
             result = []
             for sub in subs:
+                # 判断订阅来源：TMDB订阅 / 豆瓣订阅
+                tmdbid = getattr(sub, "tmdbid", None)
+                doubanid = getattr(sub, "doubanid", None)
+                if tmdbid:
+                    sub_source = "tmdb"
+                elif doubanid:
+                    sub_source = "douban"
+                else:
+                    sub_source = "unknown"
+
                 result.append({
                     "id": getattr(sub, "id", None),
                     "name": getattr(sub, "name", ""),
                     "year": getattr(sub, "year", ""),
                     "type": getattr(sub, "type", ""),
-                    "tmdbid": getattr(sub, "tmdbid", None),
-                    "doubanid": getattr(sub, "doubanid", None),
+                    "tmdbid": tmdbid,
+                    "doubanid": doubanid,
                     "poster": getattr(sub, "poster", ""),
+                    "state": getattr(sub, "state", ""),
+                    "episodes": getattr(sub, "episodes", 0) or 0,
+                    "total_episodes": getattr(sub, "total_episodes", 0) or 0,
+                    "season": getattr(sub, "season", 0) or 0,
+                    "complete": getattr(sub, "complete", False),
+                    "sub_source": sub_source,
                 })
             logger.info(f"获取到 {len(result)} 条活跃订阅")
             return result
@@ -573,6 +589,68 @@ class SubscriptionReminder(_PluginBase):
         if doubanid:
             return f"douban:{doubanid}"
         return f"name:{sub.get('name', '')}"
+
+    # ========== 订阅状态检测 ==========
+
+    def _check_subscription_status(self, sub: Dict) -> str:
+        """检测订阅状态，返回: 'completed'|'airing'|'upcoming'|'searching'|'unknown'
+        - completed: 订阅已完成（全部下载完毕），无需提醒
+        - airing: 订阅未完成但有已下载集数，代表正在播出中（首播在系统时间之前且不超过3个月）
+        - upcoming: 订阅未完成且无已下载集数，代表尚未开播
+        - searching: 订阅正在搜索中，暂不处理
+        """
+        complete = sub.get("complete", False)
+        state = str(sub.get("state", "")).upper()
+        episodes = int(sub.get("episodes", 0) or 0)
+
+        # 已完成订阅，跳过
+        if complete:
+            return "completed"
+
+        # 正在搜索中（state=R），暂不处理，等下次刷新
+        if state == "R":
+            return "searching"
+
+        # 有已下载集数 → 正在播出中
+        if episodes > 0:
+            return "airing"
+
+        # 未完成、无已下载集数 → 尚未开播
+        return "upcoming"
+
+    def _validate_date_by_status(self, date_str: str, sub_status: str) -> bool:
+        """根据订阅状态验证日期是否合理
+        - airing: 日期应在系统时间之前且不超过3个月
+        - upcoming: 日期应在系统时间之后（未来）
+        """
+        if not self._is_date_precise(date_str):
+            return True  # 非精确日期无法验证，保留
+
+        try:
+            date_dt = datetime.strptime(date_str, "%Y-%m-%d")
+            today = datetime.now()
+            three_months_ago = today - timedelta(days=90)
+
+            if sub_status == "airing":
+                # 正在播出：首播应在3个月内
+                if date_dt < three_months_ago:
+                    logger.debug(f"日期({date_str})早于3个月前，不符合airing状态")
+                    return False
+                if date_dt > today:
+                    logger.debug(f"日期({date_str})在未来，不符合airing状态")
+                    return False
+                return True
+
+            elif sub_status == "upcoming":
+                # 尚未开播：日期应在未来
+                if date_dt <= today:
+                    logger.debug(f"日期({date_str})已过，不符合upcoming状态")
+                    return False
+                return True
+
+            return True
+        except ValueError:
+            return True
 
     # ========== 上映日期查询（三级回退） ==========
 
@@ -709,8 +787,8 @@ class SubscriptionReminder(_PluginBase):
         # 直接返回，大多数情况下 tmdbinfo 已经有兼容的属性
         return tmdbinfo
 
-    def __get_release_date_by_douban(self, sub: Dict) -> Optional[str]:
-        """通过豆瓣页面抓取上映日期"""
+    def __get_release_date_by_douban(self, sub: Dict) -> Optional[Dict]:
+        """通过豆瓣页面抓取上映日期和类型（动画/电视剧/电影）"""
         doubanid = sub.get("doubanid")
         if not doubanid:
             return None
@@ -724,12 +802,23 @@ class SubscriptionReminder(_PluginBase):
             resp.raise_for_status()
             html = resp.text
 
+            result = {
+                "release_date": "",
+                "douban_genre": "",  # 豆瓣分类：动画/电视剧/电影
+            }
+
             # 提取信息区域
             info_match = re.search(r'<div\s+id="info"[^>]*>(.*?)</div>', html, re.DOTALL)
             if info_match:
                 info_html = info_match.group(1)
 
-                # 首播日期
+                # 检测豆瓣类型：动画
+                genre_match = re.search(r'<span\s+property="v:genre">([^<]+)</span>', info_html)
+                if genre_match:
+                    result["douban_genre"] = genre_match.group(1).strip()
+                    logger.debug(f"豆瓣类型: {sub.get('name')} -> {result['douban_genre']}")
+
+                # 首播日期（电视剧/动画）
                 date_match = re.search(r'首播:</span>\s*<span[^>]*>([^<]+)', info_html)
                 if not date_match:
                     date_match = re.search(r'上映日期:</span>\s*<span[^>]*>([^<]+)', info_html)
@@ -737,10 +826,20 @@ class SubscriptionReminder(_PluginBase):
                     raw_date = date_match.group(1).strip()
                     date_match2 = re.search(r'(\d{4}-\d{2}-\d{2})', raw_date)
                     if date_match2:
-                        logger.debug(f"豆瓣获取到上映日期: {sub.get('name')} -> {date_match2.group(1)}")
-                        return date_match2.group(1)
-                    return raw_date
+                        result["release_date"] = date_match2.group(1)
+                        logger.debug(f"豆瓣获取到上映日期: {sub.get('name')} -> {result['release_date']}")
+                    else:
+                        result["release_date"] = raw_date
 
+            # 如果 info 区域没匹配到日期，尝试从页面其他位置获取
+            if not result["release_date"]:
+                # 尝试从 release_date 属性获取（电影页）
+                date_match = re.search(r'"releaseDate":"(\d{4}-\d{2}-\d{2})"', html)
+                if date_match:
+                    result["release_date"] = date_match.group(1)
+
+            if result["release_date"] or result["douban_genre"]:
+                return result
             return None
         except Exception as e:
             logger.debug(f"豆瓣查询上映日期失败 ({sub.get('name')}, doubanid={doubanid}): {e}")
@@ -789,20 +888,24 @@ class SubscriptionReminder(_PluginBase):
 
     def __get_release_date(self, sub: Dict) -> Dict:
         """统一入口：豆瓣 > TMDB > Bing 三者全查，综合选最优日期
-        规则：精确日期(YYYY-MM-DD)优先，同精度选距离系统时间更近的"""
+        规则：精确日期(YYYY-MM-DD)优先，同精度选距离系统时间更近的
+        增加：订阅状态校验（airing/upcoming）+ 豆瓣动画类型识别"""
         result = {
             "release_date": "",
             "poster": "",
             "tmdb_url": "",
             "douban_url": "",
             "media_type": "",
+            "douban_genre": "",
         }
 
         name = sub.get("name", "")
+        sub_status = sub.get("_status", "unknown")
+        sub_source = sub.get("sub_source", "")
 
         # 1. 三者全查
         tmdb_result = self.__get_release_date_by_tmdb(sub)
-        douban_date = self.__get_release_date_by_douban(sub)
+        douban_result = self.__get_release_date_by_douban(sub)
         bing_date = self.__get_release_date_by_bing(sub)
 
         # 收集 TMDB 海报和链接
@@ -811,14 +914,20 @@ class SubscriptionReminder(_PluginBase):
             result["tmdb_url"] = tmdb_result.get("tmdb_url", "")
             result["media_type"] = tmdb_result.get("media_type", "")
 
+        # 收集豆瓣类型
+        douban_date = None
+        if douban_result:
+            douban_date = douban_result.get("release_date", "")
+            result["douban_genre"] = douban_result.get("douban_genre", "")
+
         # 构建豆瓣链接
         doubanid = sub.get("doubanid")
         if doubanid:
             result["douban_url"] = f"https://movie.douban.com/subject/{doubanid}/"
 
-        # 2. 收集所有候选日期，标注来源和精度
+        # 2. 收集所有候选日期，标注来源、精度和是否通过状态校验
         today = datetime.now().date()
-        candidates = []  # [(date_str, source_label, is_precise, days_diff)]
+        candidates = []  # [(date_str, source_label, is_precise, days_diff, valid)]
 
         def add_candidate(date_str: str, source: str):
             if not date_str:
@@ -835,11 +944,13 @@ class SubscriptionReminder(_PluginBase):
                 else:
                     return
                 diff = abs((dt - today).days)
-                candidates.append((date_str, source, is_precise, diff))
+                # 状态校验
+                valid = self._validate_date_by_status(date_str, sub_status)
+                candidates.append((date_str, source, is_precise, diff, valid))
             except ValueError:
                 return
 
-        # 豆瓣优先加入候选
+        # 加入候选：豆瓣优先（因为它有类型信息，更准确）
         if douban_date:
             add_candidate(douban_date, "豆瓣")
         if tmdb_result and tmdb_result.get("release_date"):
@@ -851,19 +962,32 @@ class SubscriptionReminder(_PluginBase):
             logger.info(f"未能获取上映日期: {name}")
             return result
 
-        # 3. 选最优日期：精确优先，同精度选距离今天更近的
-        precise_candidates = [c for c in candidates if c[2]]
-        if precise_candidates:
-            # 有精确日期，选距离今天最近的
-            precise_candidates.sort(key=lambda x: x[3])
-            best = precise_candidates[0]
+        # 3. 选最优日期
+        # 优先选通过状态校验的日期
+        valid_candidates = [c for c in candidates if c[4]]
+        if valid_candidates:
+            # 在通过校验的候选中，精确优先，同精度选距离今天更近的
+            valid_precise = [c for c in valid_candidates if c[2]]
+            if valid_precise:
+                valid_precise.sort(key=lambda x: x[3])
+                best = valid_precise[0]
+            else:
+                valid_candidates.sort(key=lambda x: x[3])
+                best = valid_candidates[0]
         else:
-            # 无精确日期，选距离今天最近的
-            candidates.sort(key=lambda x: x[3])
-            best = candidates[0]
+            # 都不通过校验，回退到精确优先+距离最近
+            precise_candidates = [c for c in candidates if c[2]]
+            if precise_candidates:
+                precise_candidates.sort(key=lambda x: x[3])
+                best = precise_candidates[0]
+            else:
+                candidates.sort(key=lambda x: x[3])
+                best = candidates[0]
 
         result["release_date"] = best[0]
-        logger.info(f"获取到上映日期: {name} -> {best[0]} (来源: {best[1]}, 精确: {best[2]})")
+        status_note = "✓" if best[4] else "✗"
+        genre_info = f", 豆瓣类型: {result['douban_genre']}" if result.get("douban_genre") else ""
+        logger.info(f"获取到上映日期: {name} -> {best[0]} (来源: {best[1]}, 精确: {best[2]}, 状态校验: {status_note}{genre_info})")
 
         return result
 
@@ -877,7 +1001,7 @@ class SubscriptionReminder(_PluginBase):
     # ========== 智能刷新 ==========
 
     def __run_refresh(self):
-        """每日定时刷新：获取所有订阅，仅刷新日期未知的订阅，检测新增订阅"""
+        """每日定时刷新：获取所有订阅，检测状态后智能获取上映日期"""
         try:
             logger.info("开始执行订阅上映日期刷新...")
 
@@ -899,7 +1023,12 @@ class SubscriptionReminder(_PluginBase):
             if new_ids:
                 logger.info(f"检测到 {len(new_ids)} 个新增订阅")
 
-            # 遍历订阅，智能跳过已有精确日期的
+            # 统计
+            skipped_completed = 0
+            skipped_searching = 0
+            skipped_cached = 0
+
+            # 遍历订阅，智能跳过
             processed = 0
             max_per_run = 50
             for sub in subs:
@@ -911,10 +1040,29 @@ class SubscriptionReminder(_PluginBase):
                 if not uid:
                     continue
 
-                # 检查缓存：已有精确日期则跳过
-                cached = self._release_date_cache.get(uid, "")
-                if self._is_date_precise(cached) and uid not in new_ids:
+                # 检测订阅状态
+                sub_status = self._check_subscription_status(sub)
+                is_new = uid in new_ids
+
+                # 已完成订阅，跳过
+                if sub_status == "completed":
+                    skipped_completed += 1
                     continue
+
+                # 正在搜索中的订阅，暂不处理（等订阅搜索完成后再获取日期）
+                if sub_status == "searching":
+                    skipped_searching += 1
+                    logger.debug(f"订阅正在搜索中，跳过: {sub.get('name')}")
+                    continue
+
+                # 检查缓存：已有精确日期且非新增订阅则跳过
+                cached = self._release_date_cache.get(uid, "")
+                if self._is_date_precise(cached) and not is_new:
+                    skipped_cached += 1
+                    continue
+
+                # 注入状态到订阅信息，供日期获取使用
+                sub["_status"] = sub_status
 
                 # 获取上映日期
                 _time.sleep(0.5)  # API 限流
@@ -929,6 +1077,7 @@ class SubscriptionReminder(_PluginBase):
 
                 # 更新或添加到历史记录
                 sub_id = str(sub.get("id", ""))
+                douban_genre = date_info.get("douban_genre", "")
                 history_entry = {
                     "sub_id": sub_id,
                     "title": sub.get("name", ""),
@@ -938,6 +1087,8 @@ class SubscriptionReminder(_PluginBase):
                     "release_date": release_date,
                     "douban_url": date_info.get("douban_url", ""),
                     "tmdb_url": date_info.get("tmdb_url", ""),
+                    "douban_genre": douban_genre,
+                    "sub_status": sub_status,
                     "source": "订阅",
                     "added_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 }
@@ -964,8 +1115,9 @@ class SubscriptionReminder(_PluginBase):
 
             # 持久化
             self.__update_config()
-            logger.info(f"订阅上映日期刷新完成：处理 {processed} 条，缓存 {len(self._release_date_cache)} 条，"
-                        f"历史 {len(self._reminder_history)} 条")
+            logger.info(f"订阅上映日期刷新完成：处理 {processed} 条，跳过已完成 {skipped_completed} 条，"
+                        f"跳过搜索中 {skipped_searching} 条，跳过缓存 {skipped_cached} 条，"
+                        f"缓存 {len(self._release_date_cache)} 条，历史 {len(self._reminder_history)} 条")
 
         except Exception as e:
             logger.error(f"订阅上映日期刷新异常: {e}")
