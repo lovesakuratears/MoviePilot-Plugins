@@ -28,7 +28,7 @@ class SubscriptionReminder(_PluginBase):
     # 插件图标
     plugin_icon = "douban.png"
     # 插件版本
-    plugin_version = "1.0.0"
+    plugin_version = "1.0.1"
     # 插件作者
     plugin_author = "lovesakuratears"
     # 作者主页
@@ -669,13 +669,13 @@ class SubscriptionReminder(_PluginBase):
             return None
 
     def __get_release_date_by_bing(self, sub: Dict) -> Optional[str]:
-        """通过 Bing 搜索获取上映日期"""
+        """通过 Bing 搜索获取上映日期（《xxx》定档）"""
         title = sub.get("name", "")
         if not title:
             return None
 
         try:
-            search_query = f"{title} 定档时间"
+            search_query = f"《{title}》定档"
             search_url = f"https://www.bing.com/search?q={requests.utils.quote(search_query)}"
             headers = {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
@@ -710,7 +710,8 @@ class SubscriptionReminder(_PluginBase):
             return None
 
     def __get_release_date(self, sub: Dict) -> Dict:
-        """统一入口：TMDB 优先 → 豆瓣回退 → Bing 最后手段"""
+        """统一入口：豆瓣 > TMDB > Bing 三者全查，综合选最优日期
+        规则：精确日期(YYYY-MM-DD)优先，同精度选距离系统时间更近的"""
         result = {
             "release_date": "",
             "poster": "",
@@ -721,35 +722,70 @@ class SubscriptionReminder(_PluginBase):
 
         name = sub.get("name", "")
 
-        # 1. TMDB 优先
+        # 1. 三者全查
         tmdb_result = self.__get_release_date_by_tmdb(sub)
+        douban_date = self.__get_release_date_by_douban(sub)
+        bing_date = self.__get_release_date_by_bing(sub)
+
+        # 收集 TMDB 海报和链接
         if tmdb_result:
-            result["release_date"] = tmdb_result.get("release_date", "")
             result["poster"] = tmdb_result.get("poster", "")
             result["tmdb_url"] = tmdb_result.get("tmdb_url", "")
             result["media_type"] = tmdb_result.get("media_type", "")
-
-        # 2. 豆瓣回退（TMDB 无日期时）
-        if not result["release_date"] or not re.match(r'^\d{4}-\d{2}-\d{2}$', result["release_date"]):
-            douban_date = self.__get_release_date_by_douban(sub)
-            if douban_date:
-                result["release_date"] = douban_date
-
-        # 3. Bing 搜索最后手段
-        if not result["release_date"]:
-            bing_date = self.__get_release_date_by_bing(sub)
-            if bing_date:
-                result["release_date"] = bing_date
 
         # 构建豆瓣链接
         doubanid = sub.get("doubanid")
         if doubanid:
             result["douban_url"] = f"https://movie.douban.com/subject/{doubanid}/"
 
-        if result["release_date"]:
-            logger.info(f"获取到上映日期: {name} -> {result['release_date']}")
-        else:
+        # 2. 收集所有候选日期，标注来源和精度
+        today = datetime.now().date()
+        candidates = []  # [(date_str, source_label, is_precise, days_diff)]
+
+        def add_candidate(date_str: str, source: str):
+            if not date_str:
+                return
+            is_precise = bool(re.match(r'^\d{4}-\d{2}-\d{2}$', date_str))
+            # 计算与今天的天数差
+            try:
+                if is_precise:
+                    dt = datetime.strptime(date_str, "%Y-%m-%d").date()
+                elif re.match(r'^\d{4}-\d{2}$', date_str):
+                    dt = datetime.strptime(date_str + "-01", "%Y-%m-%d").date()
+                elif re.match(r'^\d{4}$', date_str):
+                    dt = datetime.strptime(date_str + "-01-01", "%Y-%m-%d").date()
+                else:
+                    return
+                diff = abs((dt - today).days)
+                candidates.append((date_str, source, is_precise, diff))
+            except ValueError:
+                return
+
+        # 豆瓣优先加入候选
+        if douban_date:
+            add_candidate(douban_date, "豆瓣")
+        if tmdb_result and tmdb_result.get("release_date"):
+            add_candidate(tmdb_result["release_date"], "TMDB")
+        if bing_date:
+            add_candidate(bing_date, "Bing")
+
+        if not candidates:
             logger.info(f"未能获取上映日期: {name}")
+            return result
+
+        # 3. 选最优日期：精确优先，同精度选距离今天更近的
+        precise_candidates = [c for c in candidates if c[2]]
+        if precise_candidates:
+            # 有精确日期，选距离今天最近的
+            precise_candidates.sort(key=lambda x: x[3])
+            best = precise_candidates[0]
+        else:
+            # 无精确日期，选距离今天最近的
+            candidates.sort(key=lambda x: x[3])
+            best = candidates[0]
+
+        result["release_date"] = best[0]
+        logger.info(f"获取到上映日期: {name} -> {best[0]} (来源: {best[1]}, 精确: {best[2]})")
 
         return result
 
@@ -867,17 +903,23 @@ class SubscriptionReminder(_PluginBase):
             today = datetime.now().date()
             end_date = today + timedelta(days=self._days)
 
-            # 筛选上映日期在范围内的订阅
+            # 筛选上映日期在范围内的订阅（精确日期 + 月份精度）
             upcoming = []
             for item in self._reminder_history:
                 release_date = item.get("release_date", "")
-                if not release_date or not self._is_date_precise(release_date):
+                if not release_date:
                     continue
 
                 try:
-                    rd = datetime.strptime(release_date, "%Y-%m-%d").date()
-                    if today <= rd <= end_date:
-                        upcoming.append(item)
+                    if self._is_date_precise(release_date):
+                        rd = datetime.strptime(release_date, "%Y-%m-%d").date()
+                        if today <= rd <= end_date:
+                            upcoming.append(item)
+                    elif re.match(r'^\d{4}-\d{2}$', release_date):
+                        # 月份精度：取该月第一天判断
+                        rd = datetime.strptime(release_date + "-01", "%Y-%m-%d").date()
+                        if today <= rd <= end_date:
+                            upcoming.append(item)
                 except ValueError:
                     continue
 
@@ -898,7 +940,7 @@ class SubscriptionReminder(_PluginBase):
             logger.error(f"每周上映提醒异常: {e}")
 
     def __send_weekly_notification(self, items: List[Dict], start_date, end_date):
-        """发送每周汇总通知：链接优先豆瓣，其次 TMDB"""
+        """发送每周汇总通知：链接优先豆瓣，其次 TMDB；月份精度加（预计）标记"""
         n = len(items)
         start_str = start_date.strftime("%Y-%m-%d")
         end_str = end_date.strftime("%Y-%m-%d")
@@ -916,11 +958,17 @@ class SubscriptionReminder(_PluginBase):
             # 链接优先豆瓣，其次 TMDB
             link = douban_url if douban_url else (tmdb_url if tmdb_url else "")
 
+            # 月份精度加"（预计）"标记
+            if self._is_date_precise(release_date):
+                date_display = release_date
+            else:
+                date_display = f"{release_date}（预计）"
+
             title_line = f"🎞 {title}"
             if year:
                 title_line += f" ({year})"
             lines.append(title_line)
-            lines.append(f"📅 上映日期：{release_date}")
+            lines.append(f"📅 上映日期：{date_display}")
             if link:
                 lines.append(f"🔗 {link}")
             lines.append("")

@@ -1,14 +1,15 @@
 {
   "SubscriptionReminder": {
     "name": "订阅上映提醒",
-    "description": "定时检查已订阅影视的上映日期，在即将播出前发送通知提醒。支持TMDB/豆瓣/Bing三级上映日期查询，每周汇总提醒，开播前24小时提醒。",
+    "description": "定时检查已订阅影视的上映日期，在即将播出前发送通知提醒。支持豆瓣/TMDB/Bing三级上映日期查询（三者全查+距离最近优选），每周汇总提醒，开播前24小时提醒。",
     "labels": "订阅,上映提醒,通知,TMDB,豆瓣",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "icon": "douban.png",
     "author": "lovesakuratears",
     "author_url": "https://github.com/lovesakuratears/MoviePilot-Plugins",
     "level": 1,
     "history": {
+      "v1.0.1": "修复日期获取错误：三者全查（豆瓣>TMDB>Bing），精确日期优先+距离最近择优；Bing搜索改为《xxx》定档；月份精度通知加（预计）标记；每周提醒支持月份精度筛选",
       "v1.0.0": "初始版本：订阅上映日期查询（TMDB→豆瓣→Bing三级回退）、智能刷新策略（精确日期锁定）、订阅变更感知、每日定时刷新、每周汇总提醒、开播前24小时提醒、UI全抄doubansync（VCard水平卡片+hover动效）"
     }
   }
