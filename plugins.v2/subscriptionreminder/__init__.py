@@ -28,7 +28,7 @@ class SubscriptionReminder(_PluginBase):
     # 插件图标
     plugin_icon = "douban.png"
     # 插件版本
-    plugin_version = "1.0.3"
+    plugin_version = "1.0.4"
     # 插件作者
     plugin_author = "lovesakuratears"
     # 作者主页
@@ -592,36 +592,28 @@ class SubscriptionReminder(_PluginBase):
 
     # ========== 订阅状态检测 ==========
 
-    def _check_subscription_status(self, sub: Dict) -> str:
-        """检测订阅状态，返回: 'completed'|'airing'|'upcoming'|'searching'|'unknown'
-        - completed: 订阅已完成（全部下载完毕），无需提醒
-        - airing: 订阅未完成但有已下载集数，代表正在播出中（首播在系统时间之前且不超过3个月）
-        - upcoming: 订阅未完成且无已下载集数，代表尚未开播
-        - searching: 订阅正在搜索中，暂不处理
+    def _should_skip_subscription(self, sub: Dict) -> Tuple[bool, str]:
+        """检查是否应跳过该订阅，返回 (是否跳过, 原因)
+        - 已完成(N) 或 complete=True → 跳过
+        - 已暂停(S) → 跳过
+        - 其他状态 → 正常处理，由实际日期决定上映状态
         """
-        complete = sub.get("complete", False)
         state = str(sub.get("state", "")).upper()
-        episodes = int(sub.get("episodes", 0) or 0)
+        complete = sub.get("complete", False)
 
-        # 已完成订阅，跳过
-        if complete:
-            return "completed"
+        if complete or state == "N":
+            return True, "completed"
+        if state == "S":
+            return True, "paused"
+        return False, ""
 
-        # 正在搜索中（state=R），暂不处理，等下次刷新
-        if state == "R":
-            return "searching"
-
-        # 有已下载集数 → 正在播出中
-        if episodes > 0:
-            return "airing"
-
-        # 未完成、无已下载集数 → 尚未开播
-        return "upcoming"
-
-    def _validate_date_by_status(self, date_str: str, sub_status: str) -> bool:
-        """根据订阅状态验证日期是否合理
-        - airing: 日期应在系统时间之前且不超过3个月
-        - upcoming: 日期应在系统时间之后（未来）
+    def _validate_date_by_status(self, date_str: str, sub: Dict) -> bool:
+        """根据订阅综合信息验证日期是否合理
+        结合豆瓣分类+订阅来源+实际日期，综合判断：
+        - 日期在未来 → 有效（未开播）
+        - 日期在过去 → 需要结合订阅是否完成来判断是否有效
+        - 订阅有已下载集数(episodes>0) → 播出中，过去日期有效
+        - 订阅无已下载集数 + 豆瓣类型=动画 + 有真人版 → 可能是同名不同版本，保留日期
         """
         if not self._is_date_precise(date_str):
             return True  # 非精确日期无法验证，保留
@@ -629,26 +621,30 @@ class SubscriptionReminder(_PluginBase):
         try:
             date_dt = datetime.strptime(date_str, "%Y-%m-%d")
             today = datetime.now()
-            three_months_ago = today - timedelta(days=90)
 
-            if sub_status == "airing":
-                # 正在播出：首播应在3个月内
+            # 未来日期，始终有效
+            if date_dt > today:
+                return True
+
+            # 过去日期：订阅有已下载集数 → 播出中，有效
+            episodes = int(sub.get("episodes", 0) or 0)
+            if episodes > 0:
+                # 播出中，但日期不应太老（超过3个月大概率是错误数据）
+                three_months_ago = today - timedelta(days=90)
                 if date_dt < three_months_ago:
-                    logger.debug(f"日期({date_str})早于3个月前，不符合airing状态")
-                    return False
-                if date_dt > today:
-                    logger.debug(f"日期({date_str})在未来，不符合airing状态")
+                    logger.debug(f"日期({date_str})早于3个月前，但订阅有{episodes}集已下载，可能是错误日期")
                     return False
                 return True
 
-            elif sub_status == "upcoming":
-                # 尚未开播：日期应在未来
-                if date_dt <= today:
-                    logger.debug(f"日期({date_str})已过，不符合upcoming状态")
-                    return False
+            # 过去日期 + 无已下载集数：可能是搜索失败或已完成
+            # 如果订阅已完成，说明该日期是合理的（剧已完结）
+            if sub.get("complete", False):
                 return True
 
+            # 否则无法确定，保留但标记
+            logger.debug(f"日期({date_str})已过且无已下载集数，可能为搜索失败或旧数据，暂保留")
             return True
+
         except ValueError:
             return True
 
@@ -900,7 +896,6 @@ class SubscriptionReminder(_PluginBase):
         }
 
         name = sub.get("name", "")
-        sub_status = sub.get("_status", "unknown")
         sub_source = sub.get("sub_source", "")
 
         # 1. 三者全查
@@ -945,7 +940,7 @@ class SubscriptionReminder(_PluginBase):
                     return
                 diff = abs((dt - today).days)
                 # 状态校验
-                valid = self._validate_date_by_status(date_str, sub_status)
+                valid = self._validate_date_by_status(date_str, sub)
                 candidates.append((date_str, source, is_precise, diff, valid))
             except ValueError:
                 return
@@ -1001,7 +996,7 @@ class SubscriptionReminder(_PluginBase):
     # ========== 智能刷新 ==========
 
     def __run_refresh(self):
-        """每日定时刷新：获取所有订阅，检测状态后智能获取上映日期"""
+        """每日定时刷新：获取所有订阅，跳过已完成/暂停的，智能获取上映日期"""
         try:
             logger.info("开始执行订阅上映日期刷新...")
 
@@ -1025,7 +1020,7 @@ class SubscriptionReminder(_PluginBase):
 
             # 统计
             skipped_completed = 0
-            skipped_searching = 0
+            skipped_paused = 0
             skipped_cached = 0
 
             # 遍历订阅，智能跳过
@@ -1040,29 +1035,22 @@ class SubscriptionReminder(_PluginBase):
                 if not uid:
                     continue
 
-                # 检测订阅状态
-                sub_status = self._check_subscription_status(sub)
+                # 检查是否应跳过（已完成/暂停）
+                should_skip, skip_reason = self._should_skip_subscription(sub)
+                if should_skip:
+                    if skip_reason == "completed":
+                        skipped_completed += 1
+                    else:
+                        skipped_paused += 1
+                    continue
+
                 is_new = uid in new_ids
-
-                # 已完成订阅，跳过
-                if sub_status == "completed":
-                    skipped_completed += 1
-                    continue
-
-                # 正在搜索中的订阅，暂不处理（等订阅搜索完成后再获取日期）
-                if sub_status == "searching":
-                    skipped_searching += 1
-                    logger.debug(f"订阅正在搜索中，跳过: {sub.get('name')}")
-                    continue
 
                 # 检查缓存：已有精确日期且非新增订阅则跳过
                 cached = self._release_date_cache.get(uid, "")
                 if self._is_date_precise(cached) and not is_new:
                     skipped_cached += 1
                     continue
-
-                # 注入状态到订阅信息，供日期获取使用
-                sub["_status"] = sub_status
 
                 # 获取上映日期
                 _time.sleep(0.5)  # API 限流
@@ -1088,7 +1076,6 @@ class SubscriptionReminder(_PluginBase):
                     "douban_url": date_info.get("douban_url", ""),
                     "tmdb_url": date_info.get("tmdb_url", ""),
                     "douban_genre": douban_genre,
-                    "sub_status": sub_status,
                     "source": "订阅",
                     "added_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 }
@@ -1116,7 +1103,7 @@ class SubscriptionReminder(_PluginBase):
             # 持久化
             self.__update_config()
             logger.info(f"订阅上映日期刷新完成：处理 {processed} 条，跳过已完成 {skipped_completed} 条，"
-                        f"跳过搜索中 {skipped_searching} 条，跳过缓存 {skipped_cached} 条，"
+                        f"跳过暂停 {skipped_paused} 条，跳过缓存 {skipped_cached} 条，"
                         f"缓存 {len(self._release_date_cache)} 条，历史 {len(self._reminder_history)} 条")
 
         except Exception as e:
