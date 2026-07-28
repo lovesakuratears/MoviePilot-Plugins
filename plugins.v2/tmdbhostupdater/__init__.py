@@ -21,7 +21,7 @@ class TmdbHostUpdater(_PluginBase):
     plugin_name = "TMDB Host更新"
     plugin_desc = "定时从CheckTMDB获取最新TMDB hosts，自动更新系统hosts文件，解决TMDB无法访问问题。"
     plugin_icon = "hosts.png"
-    plugin_version = "1.0.14"
+    plugin_version = "1.0.15"
     plugin_author = "lovesakuratears"
     author_url = "https://github.com/cnwikee/CheckTMDB"
     plugin_config_prefix = "tmdbhostupdater_"
@@ -864,9 +864,9 @@ class TmdbHostUpdater(_PluginBase):
 
             all_hosts = []
 
-            # 先 ping 检测 GitHub 域名，如果全部不通则尝试自动切换镜像
-            gh_ping_results = [self.__ping_host(h) for h in self.GITHUB_DOMAINS]
-            gh_all_fail = all(not r["success"] for r in gh_ping_results)
+            # 先 nettest 检测 GitHub 域名，如果全部不通则尝试自动切换镜像
+            gh_nettest_results = [self.__nettest_host(h) for h in self.GITHUB_DOMAINS]
+            gh_all_fail = all(not r["success"] for r in gh_nettest_results)
             if gh_all_fail and self._auto_switch_mirror:
                 logger.warning("GitHub域名全部不通，尝试自动切换镜像")
                 switched = self.__try_auto_switch_mirror()
@@ -927,8 +927,11 @@ class TmdbHostUpdater(_PluginBase):
             return False
 
     def __check_tmdb_connectivity(self) -> bool:
-        """检查TMDB域名连通性，返回True表示全部可达"""
-        results = self.__ping_all()
+        """检查TMDB域名连通性，返回True表示全部可达
+        优先使用 MoviePilot /api/v1/system/nettest API（容器内走应用层，更准确），
+        失败时回退到 ping + TCP 探测
+        """
+        results = self.__nettest_all()
         tmdb_results = [r for r in results if r["host"] in self.TMDB_DOMAINS]
         self._ping_results = json.dumps(results, ensure_ascii=False)
         return all(r["success"] for r in tmdb_results)
@@ -1206,6 +1209,79 @@ class TmdbHostUpdater(_PluginBase):
         host_order = {h: i for i, h in enumerate(hosts)}
         results.sort(key=lambda r: host_order.get(r["host"], 99))
         return results
+
+    def __nettest_host(self, host: str, port: int = 443, timeout: float = 3.0) -> Dict[str, Any]:
+        """使用 MoviePilot 内部 /api/v1/system/nettest 检测域名连通性
+        返回 {host, success, latency_ms, error}，与 __ping_host 格式一致
+        """
+        import time
+        start = time.time()
+        try:
+            # 尝试调用 MoviePilot 内部 nettest 接口（容器内走应用层，更准确反映 hosts 生效情况）
+            from app.core.config import settings
+            api_token = settings.API_TOKEN if hasattr(settings, "API_TOKEN") else ""
+            base_url = f"http://127.0.0.1:{settings.PORT}/api/v1" if hasattr(settings, "PORT") else ""
+
+            if base_url and api_token:
+                try:
+                    resp = requests.get(
+                        f"{base_url}/system/nettest",
+                        params={"target": host, "port": port, "timeout": int(timeout)},
+                        headers={"Authorization": f"Bearer {api_token}"},
+                        timeout=timeout + 1
+                    )
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        if data.get("code") == 0:
+                            latency = (time.time() - start) * 1000
+                            return {"host": host, "success": True, "latency_ms": latency, "error": ""}
+                except Exception:
+                    pass  # 接口不可用，回退到 TCP 探测
+        except Exception:
+            pass
+
+        # 回退：TCP 端口探测
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(timeout)
+            sock.connect((host, port))
+            latency = (time.time() - start) * 1000
+            sock.close()
+            return {"host": host, "success": True, "latency_ms": latency, "error": ""}
+        except Exception as e:
+            return {"host": host, "success": False, "latency_ms": 0, "error": f"nettest失败: {str(e)}"}
+
+    def __nettest_all(self) -> List[Dict[str, Any]]:
+        """使用 MoviePilot nettest API 检测所有 TMDB 和 GitHub 域名"""
+        hosts = self.TMDB_DOMAINS + self.GITHUB_DOMAINS
+        results = []
+        with ThreadPoolExecutor(max_workers=len(hosts)) as executor:
+            future_map = {executor.submit(self.__nettest_host, h): h for h in hosts}
+            for future in as_completed(future_map):
+                results.append(future.result())
+        host_order = {h: i for i, h in enumerate(hosts)}
+        results.sort(key=lambda r: host_order.get(r["host"], 99))
+        return results
+
+    def __get_nettest_targets(self) -> List[Dict[str, Any]]:
+        """获取 MoviePilot nettest 支持的测试目标（用于诊断）"""
+        try:
+            from app.core.config import settings
+            api_token = settings.API_TOKEN if hasattr(settings, "API_TOKEN") else ""
+            base_url = f"http://127.0.0.1:{settings.PORT}/api/v1" if hasattr(settings, "PORT") else ""
+            if not base_url:
+                return []
+            resp = requests.get(
+                f"{base_url}/system/nettest/targets",
+                headers={"Authorization": f"Bearer {api_token}"},
+                timeout=5
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                return data.get("data", []) if isinstance(data, dict) else []
+        except Exception as e:
+            logger.debug(f"获取nettest targets失败: {str(e)}")
+        return []
 
     def __notify(self, title: str, text: str):
         """发送通知（同标题只发一次，避免重复骚扰）"""

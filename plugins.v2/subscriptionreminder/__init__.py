@@ -28,7 +28,7 @@ class SubscriptionReminder(_PluginBase):
     # 插件图标
     plugin_icon = "douban.png"
     # 插件版本
-    plugin_version = "1.0.4"
+    plugin_version = "1.0.6"
     # 插件作者
     plugin_author = "lovesakuratears"
     # 作者主页
@@ -359,92 +359,381 @@ class SubscriptionReminder(_PluginBase):
             added_time = item.get("added_time", "")
             sub_id = item.get("sub_id", "")
             mtype = item.get("type", "")
+            year = item.get("year", "")
+            douban_genre = item.get("douban_genre", "")
+            media_in_lib = item.get("media_in_library", False)
+            lib_episodes = item.get("library_episodes", 0)
 
             display_date, date_color = get_date_status(release_date)
             link_url = douban_url if douban_url else (tmdb_url if tmdb_url else "#")
 
+            # 编辑对话框的 model 前缀
+            edit_prefix = f"edit_{sub_id}"
+
             contents.append({
-                'component': 'VCard',
+                'component': 'VDialog',
                 'props': {
-                    'class': 'subscription-reminder-card',
-                    'style': 'transition: transform 0.2s ease, box-shadow 0.2s ease;'
+                    'model': f'{edit_prefix}_dialog',
+                    'max-width': '520px',
+                    'scrollable': True,
                 },
                 'content': [
+                    # 激活器：卡片本身
                     {
-                        "component": "VDialogCloseBtn",
-                        "props": {'innerClass': 'absolute top-0 right-0'},
-                        'events': {
-                            'click': {
-                                'api': 'plugin/SubscriptionReminder/delete_history',
-                                'method': 'get',
-                                'params': {
-                                    'sub_id': sub_id,
-                                    'apikey': settings.API_TOKEN
-                                }
-                            }
-                        }
-                    },
-                    {
-                        'component': 'div',
+                        'component': 'VCard',
                         'props': {
-                            'class': 'd-flex justify-space-start flex-nowrap flex-row',
+                            'class': 'subscription-reminder-card',
+                            'style': 'cursor: pointer; transition: transform 0.2s ease, box-shadow 0.2s ease;'
                         },
                         'content': [
                             {
-                                'component': 'div',
-                                'content': [
-                                    {
-                                        'component': 'VImg',
-                                        'props': {
-                                            'src': poster if poster else 'https://img9.doubanio.com/f/frodo/18e2b616f8e3a9e3c7d6e3e3c7d6e3e3.jpg',
-                                            'height': 120,
-                                            'width': 80,
-                                            'aspect-ratio': '2/3',
-                                            'class': 'object-cover shadow ring-gray-500 rounded',
-                                            'cover': True,
-                                            'style': 'border-radius: 6px;'
+                                "component": "VDialogCloseBtn",
+                                "props": {'innerClass': 'absolute top-0 right-0'},
+                                'events': {
+                                    'click': {
+                                        'api': 'plugin/SubscriptionReminder/delete_history',
+                                        'method': 'get',
+                                        'params': {
+                                            'sub_id': sub_id,
+                                            'apikey': settings.API_TOKEN
                                         }
                                     }
-                                ]
+                                }
                             },
                             {
                                 'component': 'div',
+                                'props': {
+                                    'class': 'd-flex justify-space-start flex-nowrap flex-row',
+                                },
                                 'content': [
                                     {
-                                        'component': 'VCardTitle',
-                                        'props': {
-                                            'class': 'ps-1 pe-5 break-words whitespace-break-spaces'
-                                        },
+                                        'component': 'div',
                                         'content': [
                                             {
-                                                'component': 'a',
+                                                'component': 'VImg',
                                                 'props': {
-                                                    'href': link_url,
-                                                    'target': '_blank'
-                                                },
-                                                'text': title
+                                                    'src': poster if poster else 'https://img9.doubanio.com/f/frodo/18e2b616f8e3a9e3c7d6e3e3c7d6e3e3.jpg',
+                                                    'height': 120,
+                                                    'width': 80,
+                                                    'aspect-ratio': '2/3',
+                                                    'class': 'object-cover shadow ring-gray-500 rounded',
+                                                    'cover': True,
+                                                    'style': 'border-radius: 6px;'
+                                                }
                                             }
                                         ]
                                     },
                                     {
-                                        'component': 'VCardText',
-                                        'props': {'class': 'pa-0 px-2'},
-                                        'text': f'类型：{mtype}' if mtype else '类型：未知'
+                                        'component': 'div',
+                                        'content': [
+                                            {
+                                                'component': 'VCardTitle',
+                                                'props': {
+                                                    'class': 'ps-1 pe-5 break-words whitespace-break-spaces'
+                                                },
+                                                'content': [
+                                                    {
+                                                        'component': 'a',
+                                                        'props': {
+                                                            'href': link_url,
+                                                            'target': '_blank'
+                                                        },
+                                                        'text': title
+                                                    }
+                                                ]
+                                            },
+                                            {
+                                                'component': 'VCardText',
+                                                'props': {'class': 'pa-0 px-2'},
+                                                'text': f'类型：{mtype}' if mtype else '类型：未知'
+                                            },
+                                            {
+                                                'component': 'VCardText',
+                                                'props': {'class': 'pa-0 px-2'},
+                                                'text': f'分类：{douban_genre}' if douban_genre else ''
+                                            },
+                                            {
+                                                'component': 'VCardText',
+                                                'props': {'class': f'pa-0 px-2 {date_color} font-weight-medium'},
+                                                'text': f'上映：{display_date}'
+                                            },
+                                            {
+                                                'component': 'VCardText',
+                                                'props': {'class': 'pa-0 px-2'},
+                                                'text': f'来源：{source}'
+                                            },
+                                            {
+                                                'component': 'VCardText',
+                                                'props': {'class': 'pa-0 px-2'},
+                                                'text': f'媒体库：已入库{lib_episodes}集' if media_in_lib else '媒体库：未入库'
+                                            },
+                                            {
+                                                'component': 'VCardText',
+                                                'props': {'class': 'pa-0 px-2'},
+                                                'text': f'加入：{added_time}' if added_time else ''
+                                            },
+                                            {
+                                                'component': 'VCardText',
+                                                'props': {'class': 'pa-0 px-2 text-caption'},
+                                                'text': '✏ 点击卡片编辑'
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    # 对话框内容：编辑表单
+                    {
+                        'component': 'VCard',
+                        'props': {'class': 'pa-4'},
+                        'content': [
+                            {
+                                'component': 'VCardTitle',
+                                'props': {'class': 'pa-0 mb-3'},
+                                'text': '✏ 编辑记录'
+                            },
+                            {
+                                'component': 'VRow',
+                                'content': [
+                                    {
+                                        'component': 'VCol',
+                                        'props': {'cols': 12, 'md': 8},
+                                        'content': [
+                                            {
+                                                'component': 'VTextField',
+                                                'props': {
+                                                    'model': f'{edit_prefix}_title',
+                                                    'label': '标题',
+                                                    'dense': True,
+                                                    'hide-details': 'auto',
+                                                }
+                                            }
+                                        ]
                                     },
                                     {
-                                        'component': 'VCardText',
-                                        'props': {'class': f'pa-0 px-2 {date_color} font-weight-medium'},
-                                        'text': f'上映：{display_date}'
+                                        'component': 'VCol',
+                                        'props': {'cols': 12, 'md': 4},
+                                        'content': [
+                                            {
+                                                'component': 'VTextField',
+                                                'props': {
+                                                    'model': f'{edit_prefix}_year',
+                                                    'label': '年份',
+                                                    'dense': True,
+                                                    'hide-details': 'auto',
+                                                }
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                'component': 'VRow',
+                                'content': [
+                                    {
+                                        'component': 'VCol',
+                                        'props': {'cols': 12, 'md': 6},
+                                        'content': [
+                                            {
+                                                'component': 'VSelect',
+                                                'props': {
+                                                    'model': f'{edit_prefix}_type',
+                                                    'label': '类型',
+                                                    'items': ['电视剧', '电影', '动画', '纪录片', '综艺'],
+                                                    'dense': True,
+                                                    'hide-details': 'auto',
+                                                }
+                                            }
+                                        ]
                                     },
                                     {
-                                        'component': 'VCardText',
-                                        'props': {'class': 'pa-0 px-2'},
-                                        'text': f'来源：{source}'
+                                        'component': 'VCol',
+                                        'props': {'cols': 12, 'md': 6},
+                                        'content': [
+                                            {
+                                                'component': 'VTextField',
+                                                'props': {
+                                                    'model': f'{edit_prefix}_release_date',
+                                                    'label': '上映日期',
+                                                    'placeholder': 'YYYY-MM-DD',
+                                                    'dense': True,
+                                                    'hide-details': 'auto',
+                                                }
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                'component': 'VRow',
+                                'content': [
+                                    {
+                                        'component': 'VCol',
+                                        'props': {'cols': 12, 'md': 6},
+                                        'content': [
+                                            {
+                                                'component': 'VTextField',
+                                                'props': {
+                                                    'model': f'{edit_prefix}_douban_genre',
+                                                    'label': '豆瓣分类',
+                                                    'placeholder': '如：动画、剧情',
+                                                    'dense': True,
+                                                    'hide-details': 'auto',
+                                                }
+                                            }
+                                        ]
                                     },
                                     {
-                                        'component': 'VCardText',
-                                        'props': {'class': 'pa-0 px-2'},
-                                        'text': f'加入：{added_time}' if added_time else ''
+                                        'component': 'VCol',
+                                        'props': {'cols': 12, 'md': 6},
+                                        'content': [
+                                            {
+                                                'component': 'VTextField',
+                                                'props': {
+                                                    'model': f'{edit_prefix}_source',
+                                                    'label': '来源',
+                                                    'dense': True,
+                                                    'hide-details': 'auto',
+                                                }
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                'component': 'VRow',
+                                'content': [
+                                    {
+                                        'component': 'VCol',
+                                        'props': {'cols': 12},
+                                        'content': [
+                                            {
+                                                'component': 'VTextField',
+                                                'props': {
+                                                    'model': f'{edit_prefix}_douban_url',
+                                                    'label': '豆瓣链接',
+                                                    'dense': True,
+                                                    'hide-details': 'auto',
+                                                }
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                'component': 'VRow',
+                                'content': [
+                                    {
+                                        'component': 'VCol',
+                                        'props': {'cols': 12},
+                                        'content': [
+                                            {
+                                                'component': 'VTextField',
+                                                'props': {
+                                                    'model': f'{edit_prefix}_tmdb_url',
+                                                    'label': 'TMDB链接',
+                                                    'dense': True,
+                                                    'hide-details': 'auto',
+                                                }
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                'component': 'VRow',
+                                'content': [
+                                    {
+                                        'component': 'VCol',
+                                        'props': {'cols': 12},
+                                        'content': [
+                                            {
+                                                'component': 'VTextField',
+                                                'props': {
+                                                    'model': f'{edit_prefix}_poster',
+                                                    'label': '海报URL',
+                                                    'dense': True,
+                                                    'hide-details': 'auto',
+                                                }
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                'component': 'VRow',
+                                'content': [
+                                    {
+                                        'component': 'VCol',
+                                        'props': {'cols': 12, 'md': 6},
+                                        'content': [
+                                            {
+                                                'component': 'VSwitch',
+                                                'props': {
+                                                    'model': f'{edit_prefix}_media_in_library',
+                                                    'label': '已在媒体库中',
+                                                    'dense': True,
+                                                }
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        'component': 'VCol',
+                                        'props': {'cols': 12, 'md': 6},
+                                        'content': [
+                                            {
+                                                'component': 'VTextField',
+                                                'props': {
+                                                    'model': f'{edit_prefix}_library_episodes',
+                                                    'label': '库中集数',
+                                                    'type': 'number',
+                                                    'dense': True,
+                                                    'hide-details': 'auto',
+                                                }
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                'component': 'VRow',
+                                'props': {'class': 'mt-3'},
+                                'content': [
+                                    {
+                                        'component': 'VCol',
+                                        'props': {'cols': 12},
+                                        'content': [
+                                            {
+                                                'component': 'VBtn',
+                                                'props': {
+                                                    'block': True,
+                                                    'color': 'primary',
+                                                    'text': '保存修改',
+                                                },
+                                                'events': {
+                                                    'click': {
+                                                        'api': f'plugin/SubscriptionReminder/edit_history',
+                                                        'method': 'post',
+                                                        'params': {
+                                                            'sub_id': sub_id,
+                                                            'apikey': settings.API_TOKEN,
+                                                            'title': f'{{{{{edit_prefix}_title}}}}',
+                                                            'year': f'{{{{{edit_prefix}_year}}}}',
+                                                            'type': f'{{{{{edit_prefix}_type}}}}',
+                                                            'release_date': f'{{{{{edit_prefix}_release_date}}}}',
+                                                            'douban_genre': f'{{{{{edit_prefix}_douban_genre}}}}',
+                                                            'source': f'{{{{{edit_prefix}_source}}}}',
+                                                            'douban_url': f'{{{{{edit_prefix}_douban_url}}}}',
+                                                            'tmdb_url': f'{{{{{edit_prefix}_tmdb_url}}}}',
+                                                            'poster': f'{{{{{edit_prefix}_poster}}}}',
+                                                            'media_in_library': f'{{{{{edit_prefix}_media_in_library}}}}',
+                                                            'library_episodes': f'{{{{{edit_prefix}_library_episodes}}}}',
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        ]
                                     }
                                 ]
                             }
@@ -538,6 +827,12 @@ class SubscriptionReminder(_PluginBase):
                 "endpoint": self.clear_history,
                 "methods": ["GET"],
                 "summary": "清空所有提醒历史记录"
+            },
+            {
+                "path": "/edit_history",
+                "endpoint": self.edit_history,
+                "methods": ["POST"],
+                "summary": "编辑单条提醒历史记录"
             }
         ]
 
@@ -647,6 +942,79 @@ class SubscriptionReminder(_PluginBase):
 
         except ValueError:
             return True
+
+    # ========== MoviePilot 内部 API 调用 ==========
+
+    def _call_mp_api(self, path: str, method: str = "GET", params: dict = None) -> Optional[dict]:
+        """调用 MoviePilot 内部 API，自动附带认证 token"""
+        try:
+            from app.core.config import settings as mp_settings
+            api_base = f"http://localhost:{mp_settings.NGINX_PORT}/api/v1"
+            url = f"{api_base}{path}"
+            if params is None:
+                params = {}
+            params["token"] = mp_settings.API_TOKEN
+            headers = {"Authorization": f"Bearer {mp_settings.API_TOKEN}"}
+
+            if method.upper() == "GET":
+                resp = requests.get(url, params=params, headers=headers, timeout=15)
+            elif method.upper() == "POST":
+                resp = requests.post(url, params=params, headers=headers, timeout=15)
+            else:
+                return None
+
+            if resp.status_code == 200:
+                return resp.json()
+            else:
+                logger.debug(f"MP API 调用失败 ({path}): HTTP {resp.status_code}")
+                return None
+        except Exception as e:
+            logger.debug(f"MP API 调用异常 ({path}): {e}")
+            return None
+
+    def _check_media_in_library(self, sub: Dict) -> Dict:
+        """通过 MoviePilot mediaserver API 检查媒体是否已在本地库中
+        返回: {"exists": bool, "seasons": set, "total_episodes": int}
+        """
+        result = {"exists": False, "seasons": set(), "total_episodes": 0}
+        try:
+            tmdbid = sub.get("tmdbid")
+            title = sub.get("name", "")
+            sub_type = sub.get("type", "")
+
+            if not tmdbid and not title:
+                return result
+
+            target_mtype = self._get_sub_media_type(sub_type)
+            params = {
+                "title": title,
+                "year": sub.get("year", ""),
+            }
+            if tmdbid:
+                params["tmdbid"] = tmdbid
+            if target_mtype == "tv":
+                params["mtype"] = "tv"
+            elif target_mtype == "movie":
+                params["mtype"] = "movie"
+
+            resp = self._call_mp_api("/mediaserver/exists", params=params)
+            if resp and resp.get("success"):
+                data = resp.get("data") or resp
+                if data:
+                    result["exists"] = True
+                    # 提取季信息
+                    if isinstance(data, dict):
+                        seasons = data.get("seasons", {})
+                        if isinstance(seasons, dict):
+                            for season_num, episodes in seasons.items():
+                                result["seasons"].add(int(season_num))
+                                result["total_episodes"] += len(episodes) if isinstance(episodes, list) else 0
+                        elif isinstance(seasons, list):
+                            result["total_episodes"] = len(seasons)
+            return result
+        except Exception as e:
+            logger.debug(f"检查媒体库失败 ({sub.get('name')}): {e}")
+            return result
 
     # ========== 上映日期查询（三级回退） ==========
 
@@ -784,11 +1152,59 @@ class SubscriptionReminder(_PluginBase):
         return tmdbinfo
 
     def __get_release_date_by_douban(self, sub: Dict) -> Optional[Dict]:
-        """通过豆瓣页面抓取上映日期和类型（动画/电视剧/电影）"""
+        """通过 MoviePilot 内部豆瓣 API 获取上映日期和类型（动画/电视剧/电影）
+        优先使用内部 API，失败时回退到页面抓取"""
         doubanid = sub.get("doubanid")
+        name = sub.get("name", "")
         if not doubanid:
             return None
 
+        result = {
+            "release_date": "",
+            "douban_genre": "",
+            "douban_type": "",  # movie/tv
+            "title": "",
+            "year": "",
+        }
+
+        # 方案1：使用 MoviePilot 内部豆瓣 API（更可靠、结构化数据）
+        try:
+            api_resp = self._call_mp_api(f"/douban/{doubanid}")
+            if api_resp and api_resp.get("success"):
+                data = api_resp.get("data") or api_resp
+
+                # 提取豆瓣类型（动画/剧情/喜剧等）
+                genres = data.get("genre") or data.get("genres") or []
+                if isinstance(genres, list) and genres:
+                    result["douban_genre"] = genres[0]
+                elif isinstance(genres, str) and genres:
+                    result["douban_genre"] = genres.split("/")[0].strip() if "/" in genres else genres
+
+                # 提取上映日期
+                release_date = data.get("release_date") or data.get("pubdate") or ""
+                if release_date:
+                    date_match = re.search(r'(\d{4}-\d{2}-\d{2})', str(release_date))
+                    if date_match:
+                        result["release_date"] = date_match.group(1)
+                    else:
+                        result["release_date"] = str(release_date).split("(")[0].strip()
+
+                # 提取类型 (movie/tv)
+                douban_type = data.get("type") or data.get("subtype") or ""
+                if douban_type:
+                    result["douban_type"] = str(douban_type).lower()
+
+                # 标题和年份
+                result["title"] = data.get("title") or ""
+                result["year"] = str(data.get("year", ""))
+
+                if result["release_date"] or result["douban_genre"]:
+                    logger.debug(f"MP豆瓣API获取: {name} -> 日期={result['release_date']}, 类型={result['douban_genre']}")
+                    return result
+        except Exception as e:
+            logger.debug(f"MP豆瓣API调用失败 ({name}): {e}")
+
+        # 方案2：回退到页面抓取（兼容旧版本）
         try:
             url = f"https://movie.douban.com/subject/{doubanid}/"
             headers = {
@@ -797,11 +1213,6 @@ class SubscriptionReminder(_PluginBase):
             resp = requests.get(url, headers=headers, timeout=15)
             resp.raise_for_status()
             html = resp.text
-
-            result = {
-                "release_date": "",
-                "douban_genre": "",  # 豆瓣分类：动画/电视剧/电影
-            }
 
             # 提取信息区域
             info_match = re.search(r'<div\s+id="info"[^>]*>(.*?)</div>', html, re.DOTALL)
@@ -812,7 +1223,7 @@ class SubscriptionReminder(_PluginBase):
                 genre_match = re.search(r'<span\s+property="v:genre">([^<]+)</span>', info_html)
                 if genre_match:
                     result["douban_genre"] = genre_match.group(1).strip()
-                    logger.debug(f"豆瓣类型: {sub.get('name')} -> {result['douban_genre']}")
+                    logger.debug(f"豆瓣类型(抓取): {name} -> {result['douban_genre']}")
 
                 # 首播日期（电视剧/动画）
                 date_match = re.search(r'首播:</span>\s*<span[^>]*>([^<]+)', info_html)
@@ -823,13 +1234,11 @@ class SubscriptionReminder(_PluginBase):
                     date_match2 = re.search(r'(\d{4}-\d{2}-\d{2})', raw_date)
                     if date_match2:
                         result["release_date"] = date_match2.group(1)
-                        logger.debug(f"豆瓣获取到上映日期: {sub.get('name')} -> {result['release_date']}")
                     else:
                         result["release_date"] = raw_date
 
             # 如果 info 区域没匹配到日期，尝试从页面其他位置获取
             if not result["release_date"]:
-                # 尝试从 release_date 属性获取（电影页）
                 date_match = re.search(r'"releaseDate":"(\d{4}-\d{2}-\d{2})"', html)
                 if date_match:
                     result["release_date"] = date_match.group(1)
@@ -838,7 +1247,7 @@ class SubscriptionReminder(_PluginBase):
                 return result
             return None
         except Exception as e:
-            logger.debug(f"豆瓣查询上映日期失败 ({sub.get('name')}, doubanid={doubanid}): {e}")
+            logger.debug(f"豆瓣页面抓取失败 ({name}, doubanid={doubanid}): {e}")
             return None
 
     def __get_release_date_by_bing(self, sub: Dict) -> Optional[str]:
@@ -882,6 +1291,79 @@ class SubscriptionReminder(_PluginBase):
             logger.debug(f"Bing搜索上映日期失败 ({title}): {e}")
             return None
 
+    def __get_tmdb_seasons(self, sub: Dict) -> Optional[Dict]:
+        """通过 MoviePilot TMDB API 获取季信息，以订阅季为准
+        - 若订阅指定了季号，优先获取该季的 air_date
+        - 同时返回所有季列表和最早季日期作为备选
+        返回: {"seasons": [...], "sub_season_air_date": "2024-01-15", "first_air_date": "2020-07-25"}
+        """
+        tmdbid = sub.get("tmdbid")
+        name = sub.get("name", "")
+        if not tmdbid:
+            return None
+
+        sub_season = sub.get("season", 0) or 0
+
+        try:
+            # 方案1：若订阅指定了季号，直接获取该季的分集信息
+            sub_season_date = None
+            if sub_season > 0:
+                api_resp = self._call_mp_api(f"/tmdb/{tmdbid}/{sub_season}")
+                if api_resp and api_resp.get("success"):
+                    data = api_resp.get("data") or api_resp
+                    if isinstance(data, dict):
+                        air_date = data.get("air_date") or ""
+                        if air_date and re.match(r'^\d{4}-\d{2}-\d{2}$', air_date):
+                            sub_season_date = air_date
+                            logger.debug(f"TMDB订阅季({sub_season})获取: {name} -> {air_date}")
+
+            # 方案2：获取所有季信息
+            api_resp = self._call_mp_api(f"/tmdb/seasons/{tmdbid}")
+            if api_resp and api_resp.get("success"):
+                data = api_resp.get("data") or api_resp
+                seasons = data if isinstance(data, list) else data.get("seasons", [])
+
+                earliest_date = None
+                season_list = []
+                for s in seasons:
+                    if isinstance(s, dict):
+                        air_date = s.get("air_date") or ""
+                        season_num = s.get("season_number", 0)
+                        if air_date and season_num > 0:
+                            season_list.append({
+                                "season_number": season_num,
+                                "air_date": air_date,
+                                "name": s.get("name", ""),
+                                "episode_count": s.get("episode_count", 0),
+                            })
+                            if re.match(r'^\d{4}-\d{2}-\d{2}$', air_date):
+                                if earliest_date is None or air_date < earliest_date:
+                                    earliest_date = air_date
+
+                if season_list:
+                    # 如果订阅季在列表中，用列表中的日期（更准确）
+                    if sub_season > 0 and not sub_season_date:
+                        for s_data in season_list:
+                            if s_data["season_number"] == sub_season:
+                                sub_season_date = s_data["air_date"]
+                                break
+
+                    logger.debug(
+                        f"TMDB季信息获取: {name} -> {len(season_list)} 季, "
+                        f"订阅季S{sub_season}: {sub_season_date}, 最早: {earliest_date}"
+                    )
+                    return {
+                        "seasons": season_list,
+                        "sub_season_air_date": sub_season_date,
+                        "first_air_date": earliest_date,
+                        "total_seasons": len(season_list),
+                        "sub_season": sub_season,
+                    }
+            return None
+        except Exception as e:
+            logger.debug(f"TMDB季信息获取失败 ({name}): {e}")
+            return None
+
     def __get_release_date(self, sub: Dict) -> Dict:
         """统一入口：豆瓣 > TMDB > Bing 三者全查，综合选最优日期
         规则：精确日期(YYYY-MM-DD)优先，同精度选距离系统时间更近的
@@ -893,15 +1375,20 @@ class SubscriptionReminder(_PluginBase):
             "douban_url": "",
             "media_type": "",
             "douban_genre": "",
+            "media_in_library": False,
+            "library_seasons": [],
+            "library_episodes": 0,
         }
 
         name = sub.get("name", "")
         sub_source = sub.get("sub_source", "")
 
-        # 1. 三者全查
+        # 1. 多源查询：TMDB(含季信息) + 豆瓣(API优先) + Bing + 媒体库检查
         tmdb_result = self.__get_release_date_by_tmdb(sub)
         douban_result = self.__get_release_date_by_douban(sub)
         bing_date = self.__get_release_date_by_bing(sub)
+        tmdb_seasons = self.__get_tmdb_seasons(sub)
+        media_lib = self._check_media_in_library(sub)
 
         # 收集 TMDB 海报和链接
         if tmdb_result:
@@ -952,6 +1439,16 @@ class SubscriptionReminder(_PluginBase):
             add_candidate(tmdb_result["release_date"], "TMDB")
         if bing_date:
             add_candidate(bing_date, "Bing")
+        # TMDB季信息：订阅季优先，最早季作为备选
+        if tmdb_seasons:
+            # 订阅季的日期（最高优先级，放在豆瓣之后）
+            sub_season_date = tmdb_seasons.get("sub_season_air_date")
+            if sub_season_date:
+                add_candidate(sub_season_date, f"TMDB季-S{tmdb_seasons.get('sub_season', '?')}")
+            # 最早季作为备选
+            first_air = tmdb_seasons.get("first_air_date")
+            if first_air and first_air != sub_season_date:
+                add_candidate(first_air, "TMDB季-S1")
 
         if not candidates:
             logger.info(f"未能获取上映日期: {name}")
@@ -982,7 +1479,19 @@ class SubscriptionReminder(_PluginBase):
         result["release_date"] = best[0]
         status_note = "✓" if best[4] else "✗"
         genre_info = f", 豆瓣类型: {result['douban_genre']}" if result.get("douban_genre") else ""
-        logger.info(f"获取到上映日期: {name} -> {best[0]} (来源: {best[1]}, 精确: {best[2]}, 状态校验: {status_note}{genre_info})")
+
+        # 注入媒体库检查结果
+        result["media_in_library"] = media_lib.get("exists", False)
+        result["library_seasons"] = list(media_lib.get("seasons", set()))
+        result["library_episodes"] = media_lib.get("total_episodes", 0)
+
+        lib_info = ""
+        if result["media_in_library"]:
+            lib_info = f", 媒体库已有 {result['library_episodes']} 集"
+            if result["library_seasons"]:
+                lib_info += f" (S{','.join(str(s) for s in sorted(result['library_seasons']))})"
+
+        logger.info(f"获取到上映日期: {name} -> {best[0]} (来源: {best[1]}, 精确: {best[2]}, 状态校验: {status_note}{genre_info}{lib_info})")
 
         return result
 
@@ -1076,6 +1585,8 @@ class SubscriptionReminder(_PluginBase):
                     "douban_url": date_info.get("douban_url", ""),
                     "tmdb_url": date_info.get("tmdb_url", ""),
                     "douban_genre": douban_genre,
+                    "media_in_library": date_info.get("media_in_library", False),
+                    "library_episodes": date_info.get("library_episodes", 0),
                     "source": "订阅",
                     "added_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 }
@@ -1277,6 +1788,46 @@ class SubscriptionReminder(_PluginBase):
         self._reminded_subscriptions = set()
         self.__update_config()
         return schemas.Response(success=True, message="历史记录已清空")
+
+    async def edit_history(self, request: Any):
+        """编辑单条提醒历史记录，允许用户手动修改全部字段"""
+        try:
+            # 从请求中获取参数
+            body = await request.json()
+            apikey = body.get("apikey", "")
+            if apikey != settings.API_TOKEN:
+                return schemas.Response(success=False, message="API密钥错误")
+
+            sub_id = body.get("sub_id", "")
+            if not sub_id:
+                return schemas.Response(success=False, message="缺少sub_id")
+
+            # 查找并更新记录
+            updated = False
+            for i, h in enumerate(self._reminder_history):
+                if h.get("sub_id") == sub_id:
+                    # 允许编辑的字段
+                    editable_fields = [
+                        "title", "type", "year", "release_date",
+                        "poster", "douban_url", "tmdb_url",
+                        "douban_genre", "source", "media_in_library",
+                        "library_episodes",
+                    ]
+                    for field in editable_fields:
+                        if field in body:
+                            self._reminder_history[i][field] = body[field]
+                    updated = True
+                    logger.info(f"用户手动编辑历史记录: {h.get('title')} -> {body.get('title', h.get('title'))}")
+                    break
+
+            if not updated:
+                return schemas.Response(success=False, message="未找到对应记录")
+
+            self.__update_config()
+            return schemas.Response(success=True, message="编辑成功")
+        except Exception as e:
+            logger.error(f"编辑历史记录失败: {e}")
+            return schemas.Response(success=False, message=str(e))
 
     # ========== 远程命令 ==========
 
