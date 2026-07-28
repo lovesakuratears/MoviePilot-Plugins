@@ -21,7 +21,7 @@ class DoubanUpcoming(_PluginBase):
     plugin_name = "刷豆瓣助手"
     plugin_desc = "省去打开豆瓣的过程，提供一条龙订阅推送服务。定时获取豆瓣即将播出/热门影视榜单，支持通过豆瓣UID获取想看列表并自动订阅未上映条目。"
     plugin_icon = "douban.png"
-    plugin_version = "1.9.6"
+    plugin_version = "1.9.7"
     plugin_author = "lovesakuratears"
     author_url = "https://github.com/lovesakuratears/MoviePilot-Plugins"
     plugin_config_prefix = "doubanupcoming_"
@@ -772,13 +772,13 @@ class DoubanUpcoming(_PluginBase):
         ]
 
     def _get_best_image_url(self, item: Dict) -> str:
-        """获取最佳海报URL：优先 item 中的 image_url，其次 TMDB 缓存，最后占位图"""
-        image_url = item.get("image_url", "")
-        if image_url:
-            return image_url
+        """获取最佳海报URL：TMDB 海报优先（豆瓣URL有防盗链，飞书/UI无法加载），其次豆瓣图片，最后占位图"""
         tmdb_poster = item.get("_tmdb_poster", "")
         if tmdb_poster:
             return f"https://image.tmdb.org/t/p/w500{tmdb_poster}"
+        image_url = item.get("image_url", "")
+        if image_url:
+            return image_url
         return "https://img9.doubanio.com/f/frodo/18e2b616f8e3a9e3c7d6e3e3c7d6e3e3.jpg"
 
     def __refresh_missing_images(self):
@@ -799,11 +799,11 @@ class DoubanUpcoming(_PluginBase):
             if not pushed:
                 return
 
-            # 收集缺失图片的条目
+            # 收集缺失 TMDB 海报的条目（豆瓣URL有防盗链，外部不可用，优先获取TMDB海报）
             missing = []
             for douban_id, info in pushed.items():
-                if info.get("image_url"):
-                    continue
+                if info.get("_tmdb_poster") or info.get("tmdb_poster"):
+                    continue  # 已有 TMDB 海报，跳过
                 if not douban_id:
                     continue
                 missing.append((douban_id, info))
@@ -818,16 +818,21 @@ class DoubanUpcoming(_PluginBase):
                 try:
                     _time.sleep(0.5)  # 每条间隔0.5秒
                     detail = self.__fetch_douban_detail(douban_id)
-                    if detail and detail.get("image_url"):
-                        info["image_url"] = detail["image_url"]
+                    if detail:
+                        if detail.get("_tmdb_poster"):
+                            info["_tmdb_poster"] = detail["_tmdb_poster"]
+                            info["tmdb_poster"] = detail["_tmdb_poster"]  # 兼容旧字段名
+                            updated = True
+                        if detail.get("image_url"):
+                            info["image_url"] = detail["image_url"]
                         if not info.get("year") and detail.get("release_date"):
                             info["year"] = detail["release_date"][:4]
                         if not info.get("genres") and detail.get("genres"):
                             info["genres"] = detail["genres"]
                         if not info.get("release_date") and detail.get("release_date"):
                             info["release_date"] = detail["release_date"]
-                        updated = True
-                        logger.debug(f"补充海报: {info.get('title', douban_id)}")
+                        if updated:
+                            logger.debug(f"补充TMDB海报: {info.get('title', douban_id)}")
                 except Exception:
                     pass
 
@@ -1344,16 +1349,16 @@ class DoubanUpcoming(_PluginBase):
                     douban_id = item.get("douban_id", "")
                     if not douban_id or douban_id in pushed:
                         continue
-                    # 获取详情以补充海报（带延迟避免CPU峰值）
-                    if not item.get("image_url"):
+                    # 获取详情以补充 TMDB 海报（豆瓣URL有防盗链，外部不可用，必须获取TMDB海报）
+                    if not item.get("_tmdb_poster"):
                         _time.sleep(0.5)
                         try:
                             detail = self.__fetch_douban_detail(douban_id)
                             if detail:
-                                if detail.get("image_url"):
-                                    item["image_url"] = detail["image_url"]
                                 if detail.get("_tmdb_poster"):
                                     item["_tmdb_poster"] = detail["_tmdb_poster"]
+                                if detail.get("image_url"):
+                                    item["image_url"] = detail["image_url"]
                                 if detail.get("genres") and not item.get("genres"):
                                     item["genres"] = detail["genres"]
                                 if detail.get("release_date") and not item.get("release_date"):
@@ -1436,16 +1441,16 @@ class DoubanUpcoming(_PluginBase):
                         tracked_count += 1
                         logger.info(f"豆瓣想看加入追踪: {title}")
                 else:
-                    # TMDB 匹配失败，尝试获取详情补充海报
-                    if not item.get("image_url"):
+                    # TMDB 匹配失败，尝试获取详情补充 TMDB 海报
+                    if not item.get("_tmdb_poster"):
                         _time.sleep(0.3)
                         try:
                             detail = self.__fetch_douban_detail(douban_id)
                             if detail:
-                                if detail.get("image_url"):
-                                    item["image_url"] = detail["image_url"]
                                 if detail.get("_tmdb_poster"):
                                     item["_tmdb_poster"] = detail["_tmdb_poster"]
+                                if detail.get("image_url"):
+                                    item["image_url"] = detail["image_url"]
                         except Exception:
                             pass
                     douban_subscribed = self.__try_douban_subscribe(item)
@@ -1627,7 +1632,7 @@ class DoubanUpcoming(_PluginBase):
 
         # ====== 核心优化：优先使用 detail 阶段缓存的 TMDB 信息，避免重复调用 __try_tmdb_match（大幅降低CPU） ======
         tmdb_url = ""
-        tmdb_image = image_url
+        tmdb_image = ""  # 绝不使用豆瓣图片URL（防盗链导致飞书下载失败），只用 TMDB 海报
         streaming_platform = item.get("streaming_platform", "")
         tmdb_matched = None
 
