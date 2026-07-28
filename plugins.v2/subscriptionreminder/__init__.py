@@ -28,7 +28,7 @@ class SubscriptionReminder(_PluginBase):
     # 插件图标
     plugin_icon = "douban.png"
     # 插件版本
-    plugin_version = "1.0.1"
+    plugin_version = "1.0.2"
     # 插件作者
     plugin_author = "lovesakuratears"
     # 作者主页
@@ -577,18 +577,63 @@ class SubscriptionReminder(_PluginBase):
     # ========== 上映日期查询（三级回退） ==========
 
     def __get_release_date_by_tmdb(self, sub: Dict) -> Optional[Dict]:
-        """通过 TMDB API 获取上映日期和海报"""
+        """通过 TMDB API 获取上映日期和海报，支持类型筛选（TV/Movie/Anime）"""
         tmdbid = sub.get("tmdbid")
-        if not tmdbid:
-            return None
+        doubanid = sub.get("doubanid")
+        name = sub.get("name", "")
+        year = sub.get("year", "")
+        sub_type = sub.get("type", "")
+
+        # 确定订阅的媒体类型（TV/Movie）
+        target_mtype = self._get_sub_media_type(sub_type)
 
         try:
             from app.chain.media import MediaChain
             from app.core.metainfo import MetaInfo
 
             mediachain = MediaChain()
-            meta = MetaInfo(title=sub.get("name", ""), year=sub.get("year", ""))
-            mediainfo = mediachain.recognize_media(meta=meta, tmdbid=tmdbid)
+            mediainfo = None
+
+            # 方案1：有 tmdbid，直接查询并验证类型
+            if tmdbid:
+                mediainfo = mediachain.recognize_media(
+                    meta=MetaInfo(title=name, year=year),
+                    tmdbid=tmdbid
+                )
+                if mediainfo and target_mtype:
+                    media_type_str = self._get_media_type_str(mediainfo)
+                    if media_type_str and media_type_str != target_mtype:
+                        logger.info(
+                            f"TMDB类型({media_type_str})与订阅类型({target_mtype})不匹配，"
+                            f"尝试按类型重新搜索: {name}"
+                        )
+                        mediainfo = None  # 类型不匹配，丢弃
+
+            # 方案2：无 tmdbid 或类型不匹配，通过豆瓣ID搜索（带类型筛选）
+            if not mediainfo and doubanid and target_mtype:
+                try:
+                    mtype_enum = MediaType.TV if target_mtype == "tv" else MediaType.MOVIE
+                    tmdbinfo = mediachain.get_tmdbinfo_by_doubanid(
+                        doubanid=doubanid, mtype=mtype_enum
+                    )
+                    if tmdbinfo:
+                        mediainfo = self._normalize_tmdb_result(tmdbinfo)
+                        logger.debug(f"通过豆瓣ID({doubanid})+类型({target_mtype})匹配到TMDB: {name}")
+                except Exception as e:
+                    logger.debug(f"豆瓣ID+类型搜索TMDB失败 ({name}): {e}")
+
+            # 方案3：名称搜索（带类型筛选）
+            if not mediainfo and name and target_mtype:
+                try:
+                    meta = MetaInfo(title=name, year=year)
+                    if target_mtype == "tv":
+                        mediainfo = mediachain.recognize_media(meta=meta, mtype=MediaType.TV)
+                    else:
+                        mediainfo = mediachain.recognize_media(meta=meta, mtype=MediaType.MOVIE)
+                    if mediainfo:
+                        logger.debug(f"通过名称+类型({target_mtype})匹配到TMDB: {name}")
+                except Exception as e:
+                    logger.debug(f"名称+类型搜索TMDB失败 ({name}): {e}")
 
             if not mediainfo:
                 return None
@@ -624,12 +669,45 @@ class SubscriptionReminder(_PluginBase):
                     result["tmdb_url"] = f"https://www.themoviedb.org/tv/{mediainfo.tmdb_id}"
 
             if result["release_date"]:
-                logger.debug(f"TMDB获取到上映日期: {sub.get('name')} -> {result['release_date']}")
+                logger.debug(f"TMDB获取到上映日期: {name} -> {result['release_date']} (类型: {result['media_type']})")
             return result
 
         except Exception as e:
-            logger.debug(f"TMDB查询上映日期失败 ({sub.get('name')}): {e}")
+            logger.debug(f"TMDB查询上映日期失败 ({name}): {e}")
             return None
+
+    @staticmethod
+    def _get_sub_media_type(sub_type) -> Optional[str]:
+        """将订阅类型映射为 'tv' 或 'movie'"""
+        if not sub_type:
+            return None
+        type_str = str(sub_type).lower()
+        if hasattr(sub_type, 'value'):
+            type_str = str(sub_type.value).lower()
+        if type_str in ("tv", "电视剧", "剧集", "series"):
+            return "tv"
+        if type_str in ("movie", "电影", "film"):
+            return "movie"
+        return None
+
+    @staticmethod
+    def _get_media_type_str(mediainfo) -> Optional[str]:
+        """从 mediainfo 提取媒体类型字符串"""
+        if hasattr(mediainfo, 'type') and mediainfo.type:
+            if hasattr(mediainfo.type, 'value'):
+                return str(mediainfo.type.value).lower()
+            return str(mediainfo.type).lower()
+        if hasattr(mediainfo, 'first_air_date') and mediainfo.first_air_date:
+            return "tv"
+        if hasattr(mediainfo, 'release_date') and mediainfo.release_date:
+            return "movie"
+        return None
+
+    @staticmethod
+    def _normalize_tmdb_result(tmdbinfo) -> Any:
+        """将 get_tmdbinfo_by_doubanid 返回的结果标准化为类 mediainfo 对象"""
+        # 直接返回，大多数情况下 tmdbinfo 已经有兼容的属性
+        return tmdbinfo
 
     def __get_release_date_by_douban(self, sub: Dict) -> Optional[str]:
         """通过豆瓣页面抓取上映日期"""
