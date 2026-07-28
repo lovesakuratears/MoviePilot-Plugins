@@ -26,6 +26,19 @@
       "v1.0.14": "修复通知重复发送：__do_fetch_and_compare 增加二次校验和防抖，防止部分域名不通时误触发拉取对比"
     }
   },
+  "SubscriptionReminder": {
+    "name": "订阅上映提醒",
+    "description": "定时检查已订阅影视的上映日期，在即将播出前发送通知提醒。支持TMDB/豆瓣/Bing三级上映日期查询，每周汇总提醒，开播前24小时提醒。",
+    "labels": "订阅,上映提醒,通知,TMDB,豆瓣",
+    "version": "1.0.0",
+    "icon": "douban.png",
+    "author": "lovesakuratears",
+    "author_url": "https://github.com/lovesakuratears/MoviePilot-Plugins",
+    "level": 1,
+    "history": {
+      "v1.0.0": "初始版本：订阅上映日期查询（TMDB→豆瓣→Bing三级回退）、智能刷新策略（精确日期锁定）、订阅变更感知、每日定时刷新、每周汇总提醒、开播前24小时提醒、UI全抄doubansync（VCard水平卡片+hover动效）"
+    }
+  },
   "DoubanUpcoming": {
     "name": "刷豆瓣助手",
     "description": "省去打开豆瓣的过程，提供一条龙订阅推送服务。定时获取豆瓣即将播出/热门影视榜单，支持通过豆瓣UID获取想看列表并自动订阅未上映条目。",
