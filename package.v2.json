@@ -3,7 +3,7 @@
     "name": "TMDB Host更新",
     "description": "定时从CheckTMDB获取最新TMDB hosts，自动更新系统hosts文件，解决TMDB无法访问问题。",
     "labels": "网络工具,TMDB,Hosts",
-    "version": "1.0.15",
+    "version": "1.0.16",
     "icon": "hosts.png",
     "author": "lovesakuratears",
     "author_url": "https://github.com/lovesakuratears/MoviePilot-Plugins",
@@ -24,6 +24,7 @@
       "v1.0.12": "修复健康检查通知过于频繁：TMDB部分域名不通时不再发送通知，仅全部域名不通时才触发通知",
       "v1.0.13": "修复健康检查部分域名不通时残留failing状态；增加详细日志输出可达/不可达域名列表",
       "v1.0.14": "修复通知重复发送：__do_fetch_and_compare 增加二次校验和防抖，防止部分域名不通时误触发拉取对比",
+      "v1.0.16": "新增Ping健康检查开关：可关闭持续ping，仅每5分钟ping TMDB域名，三域名全不通才触发拉取对比；简化健康检查逻辑（移除重试计数）；通知去重（同标题只发一次）；Hosts段隔离（# TmdbHostUpdaterPlugin标记），防止与其他host修改插件冲突",
       "v1.0.15": "集成 MoviePilot /api/v1/system/nettest API 作为主要连通性检测方式（容器内走应用层，比ping更准确反映hosts生效情况），TCP探测作为fallback"
     }
   },
