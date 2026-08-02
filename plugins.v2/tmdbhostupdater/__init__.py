@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from apscheduler.triggers.interval import IntervalTrigger
 from apscheduler.triggers.date import DateTrigger
 import requests
+import socket
 
 from app.core.event import eventmanager
 from app.log import logger
@@ -21,7 +22,7 @@ class TmdbHostUpdater(_PluginBase):
     plugin_name = "TMDB Host更新"
     plugin_desc = "定时从CheckTMDB获取最新TMDB hosts，自动更新系统hosts文件，解决TMDB无法访问问题。"
     plugin_icon = "hosts.png"
-    plugin_version = "1.0.16"
+    plugin_version = "1.0.17"
     plugin_author = "lovesakuratears"
     author_url = "https://github.com/cnwikee/CheckTMDB"
     plugin_config_prefix = "tmdbhostupdater_"
@@ -65,10 +66,7 @@ class TmdbHostUpdater(_PluginBase):
     _health_failing = False
     _ping_enabled = True
     _last_notify_title = ""
-    _ping_enabled = True
-    _last_notify_title = ""
-    _last_notify_title = ""
-    _last_fetch_compare_time = 0
+    _use_cloudfront = True
 
     def init_plugin(self, config: dict = None):
         if config:
@@ -94,9 +92,7 @@ class TmdbHostUpdater(_PluginBase):
             self._health_failing = config.get("health_failing", False)
             self._ping_enabled = config.get("ping_enabled", True)
             self._last_notify_title = config.get("last_notify_title", "")
-            self._ping_enabled = config.get("ping_enabled", True)
-            self._last_notify_title = config.get("last_notify_title", "")
-            self._last_notify_title = config.get("last_notify_title", "")
+            self._use_cloudfront = config.get("use_cloudfront", True)
 
         # 加载时从系统 hosts 读取完整内容，让手动编辑框显示真实 hosts 便于直观编辑
         system_hosts_content = self.__read_system_hosts_text()
@@ -359,7 +355,7 @@ class TmdbHostUpdater(_PluginBase):
                                 'component': 'VCol',
                                 'props': {
                                     'cols': 12,
-                                    'md': 3
+                                    'md': 6
                                 },
                                 'content': [
                                     {
@@ -375,7 +371,28 @@ class TmdbHostUpdater(_PluginBase):
                                 'component': 'VCol',
                                 'props': {
                                     'cols': 12,
-                                    'md': 3
+                                    'md': 6
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VSwitch',
+                                        'props': {
+                                            'model': 'use_cloudfront',
+                                            'label': 'CloudFront IP（解析api.tmdb.org替换被墙Fastly IP）',
+                                        }
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        'component': 'VRow',
+                        'content': [
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12,
+                                    'md': 4
                                 },
                                 'content': [
                                     {
@@ -395,7 +412,7 @@ class TmdbHostUpdater(_PluginBase):
                                 'component': 'VCol',
                                 'props': {
                                     'cols': 12,
-                                    'md': 3
+                                    'md': 4
                                 },
                                 'content': [
                                     {
@@ -415,7 +432,7 @@ class TmdbHostUpdater(_PluginBase):
                                 'component': 'VCol',
                                 'props': {
                                     'cols': 12,
-                                    'md': 3
+                                    'md': 4
                                 },
                                 'content': [
                                     {
@@ -581,7 +598,8 @@ class TmdbHostUpdater(_PluginBase):
             "last_update_status": "",
             "current_hosts": "",
             "manual_hosts": "",
-            "ping_enabled": True
+            "ping_enabled": True,
+            "use_cloudfront": True
         }
 
     def get_page(self) -> List[dict]:
@@ -884,6 +902,20 @@ class TmdbHostUpdater(_PluginBase):
             logger.error(f"更新系统hosts文件失败：{str(err) or '请检查权限'}")
             return False
 
+    def __resolve_cloudfront_ips(self, domain: str = "api.tmdb.org") -> List[str]:
+        """解析 api.tmdb.org 的 CloudFront IP，用于替换被墙的 Fastly IP"""
+        ips = []
+        try:
+            addrs = socket.getaddrinfo(domain, 443, socket.AF_INET, socket.SOCK_STREAM)
+            for addr in addrs:
+                ip = addr[4][0]
+                if ip not in ips:
+                    ips.append(ip)
+            logger.info(f"解析 {domain} CloudFront IP: {ips}")
+        except Exception as e:
+            logger.warning(f"解析 {domain} DNS 失败: {str(e)}")
+        return ips
+
     def __run_update(self):
         try:
             logger.info("开始更新TMDB Hosts")
@@ -924,6 +956,26 @@ class TmdbHostUpdater(_PluginBase):
                 self.__save_config()
                 self.__notify("TMDB Host更新失败", "拉取远端hosts数据失败，请检查网络连接或镜像地址。")
                 return False
+
+            # CloudFront IP 替换：如果启用，解析 api.tmdb.org 的 CloudFront IP 替换 api.themoviedb.org 的 Fastly IP
+            if self._use_cloudfront:
+                cf_ips = self.__resolve_cloudfront_ips()
+                if cf_ips:
+                    new_hosts = []
+                    for line in all_hosts:
+                        parts = line.split()
+                        if len(parts) >= 2:
+                            domain = parts[1]
+                            if domain == "api.themoviedb.org":
+                                # 替换为 CloudFront IP
+                                for ip in cf_ips:
+                                    new_hosts.append(f"{ip} {domain}")
+                                continue
+                        new_hosts.append(line)
+                    logger.info(f"CloudFront IP 替换: api.themoviedb.org Fastly IP -> {cf_ips} ({len(new_hosts)}条)")
+                    all_hosts = new_hosts
+                else:
+                    logger.warning("CloudFront IP 解析失败，保留 CheckTMDB 原始 IP")
 
             success = self.__add_hosts_to_system(all_hosts)
 
@@ -1079,7 +1131,7 @@ class TmdbHostUpdater(_PluginBase):
             "mirror_index": self._mirror_index,
             "ping_results": self._ping_results,
             "ping_enabled": self._ping_enabled,
-            "last_notify_title": self._last_notify_title
+            "use_cloudfront": self._use_cloudfront
         })
 
     def __api_update(self):
