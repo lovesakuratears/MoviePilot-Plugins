@@ -213,7 +213,7 @@ class WorkBuddyConnect(_PluginBase):
     plugin_name = "WorkBuddy连接器"
     plugin_desc = "将 WorkBuddy（国内版）/ WorkBuddy AI（国际版）模型接入智能助手：OpenAI 兼容接口、额度查询、每日签到。"
     plugin_icon = "Workbuddy_A.png"
-    plugin_version = "1.0.2"
+    plugin_version = "1.0.3"
     plugin_author = "lovesakuratears"
     author_url = "https://github.com/lovesakuratears/MoviePilot-Plugins"
     plugin_config_prefix = "workbuddyconnect_"
@@ -1064,12 +1064,17 @@ class WorkBuddyConnect(_PluginBase):
             ("LLM模型名称", status.defaultModel or "glm-5.2"),
         ]
         guide_items = "".join(
-            f"<p style='margin:2px 0'><code>{label}</code>：<code>{value}</code></p>"
+            f"<tr>"
+            f"<td style='padding:3px 16px 3px 0;white-space:nowrap;vertical-align:top'>"
+            f"<code>{label}</code>：</td>"
+            f"<td style='padding:3px 0;vertical-align:top;word-break:break-all'>"
+            f"<code>{value}</code></td>"
+            f"</tr>"
             for label, value in guide_rows
         )
         guide_html = (
-            "<p style='margin:0 0 6px 0'>在「设定 → 系统 → 基础设置 → 智能助手」中填写：</p>"
-            + guide_items
+            "<p style='margin:0 0 8px 0'>在「设定 → 系统 → 基础设置 → 智能助手」中填写：</p>"
+            f"<table style='border-collapse:collapse;width:100%'>{guide_items}</table>"
         )
 
         def button(text: str, path: str, method: str = "POST", params: Optional[dict] = None,
