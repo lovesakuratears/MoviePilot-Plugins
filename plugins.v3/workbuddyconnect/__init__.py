@@ -214,8 +214,8 @@ class WorkBuddyConnect(_PluginBase):
     plugin_desc = "将 WorkBuddy（国内版）/ WorkBuddy AI（国际版）模型接入智能助手：OpenAI 兼容接口、额度查询、每日签到。"
     plugin_icon = "Workbuddy_A.png"
     plugin_version = "1.0.0"
-    plugin_author = "masknull"
-    author_url = "https://github.com/masknull/dsh-workbuddy-connect"
+    plugin_author = "lovesakuratears"
+    author_url = "https://github.com/lovesakuratears/MoviePilot-Plugins"
     plugin_config_prefix = "workbuddyconnect_"
     plugin_order = 40
     auth_level = 1
