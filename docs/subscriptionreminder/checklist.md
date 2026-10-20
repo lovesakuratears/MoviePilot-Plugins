@@ -1,0 +1,52 @@
+# Checklist
+
+- [x] 插件能在 MoviePilot 中正确注册并显示"订阅上映提醒"
+- [x] 启用/禁用开关正常工作
+- [x] get_form 配置表单 UI 布局完全参照 doubansync（VForm → VRow → VCol 响应式结构）
+- [x] 第一行 VRow：启用插件、发送通知、立即运行一次 三个 VSwitch（md=4 × 3）
+- [x] 第二行 VRow：刷新间隔(小时)、提醒提前天数 两个 VTextField（md=6 × 2）
+- [x] 第三行 VRow：提醒星期 VSelect（周一~周日）、提醒时间 VTextField(HH:MM)（md=6 × 2）
+- [x] 第四行 VRow：开播前24h提醒 VSwitch、清理历史记录 VSwitch（md=4 × 2）
+- [x] 所有配置项默认值正确
+- [x] 配置持久化：重启后配置不丢失
+- [x] `get_service()` 注册 IntervalTrigger 刷新服务（按配置小时间隔）
+- [x] `get_service()` 注册 CronTrigger 每周提醒服务（按配置星期几+时间）
+- [x] `__get_all_subscriptions` 能正确通过 `SubscribeOper().list()` 获取所有活跃订阅
+- [x] TMDB 优先查询：有 `tmdbid` 的订阅能正确获取 `first_air_date`/`release_date` 和 `poster_path`
+- [x] 豆瓣回退查询：有 `doubanid` 的订阅能从豆瓣页面正则提取上映日期
+- [x] Bing 搜索最后手段：能从搜索结果摘要中提取日期信息
+- [x] 三级回退全部失败时标记为"日期未知"，下次刷新继续尝试
+- [x] `_is_date_precise` 正确判断 YYYY-MM-DD 格式（精确到日）
+- [x] 精确日期（YYYY-MM-DD）的订阅在后续刷新中被跳过，不再查询 API
+- [x] 仅有年月（YYYY-MM）或仅有年份（YYYY）的订阅在刷新中继续查询
+- [x] 日期未知的订阅在刷新中继续查询
+- [x] `_release_date_cache` 正确缓存：精确日期永久锁定，非精确日期随刷新更新
+- [x] `_known_subscriptions` 正确记录上次刷新时的订阅 ID 集合
+- [x] 刷新时正确对比当前订阅与 `_known_subscriptions`，识别新增订阅
+- [x] 新增订阅立即调用三级回退获取上映日期
+- [x] 新增订阅结果立即加入 `_reminder_history`（历史记录）
+- [x] 刷新完成后 `_known_subscriptions` 更新并持久化
+- [x] API 调用限流：每个订阅之间 0.5 秒间隔，单次最多 50 条，精确日期跳过不计入
+- [x] 首次启用时延迟 1 分钟后执行首次刷新
+- [x] 每周汇总通知格式正确：📺 + 标题 + 日期 + 链接
+- [x] 通知按上映日期升序排列
+- [x] 通知包含 TMDB 海报图片（有则显示）
+- [x] 通知包含"查看详情"链接按钮（链接优先豆瓣，其次 TMDB）
+- [x] **下周无上映时静默跳过，不发送任何通知，仅记录日志**
+- [x] 开播前24小时提醒：有精确日期的订阅自动注册 DateTrigger
+- [x] `_reminded_subscriptions` 去重：同一订阅不重复注册24h提醒
+- [x] 提醒时间已过时跳过，不重复注册
+- [x] 历史记录页面使用 `grid gap-3 grid-info-card` 布局（同 doubansync）
+- [x] 历史记录 VCard 水平卡片：VDialogCloseBtn + 海报 + 标题 + 日期 + 来源 + 加入时间（完全参照 doubansync）
+- [x] 日期状态用颜色区分：精确日期（绿色）、预计日期（黄色）、日期待定（灰色）
+- [x] 新增订阅经刷新后自动出现在 UI 历史记录中
+- [x] 卡片 hover 动效：transform translateY(-2px) + box-shadow 加深 + transition
+- [x] 海报图片有 border-radius 圆角
+- [x] 空历史记录时显示"暂无数据"（text-center）
+- [x] "立即运行一次"开关工作正常（执行后自动关闭并保存）
+- [x] "清理历史记录"开关工作正常（清空历史、缓存、已知订阅列表，执行后自动关闭并保存）
+- [x] 远程命令 `/subscription_reminder` 可触发刷新检查
+- [x] `/delete_history` API 可删除单条记录
+- [x] 插件日志不包含无关系统警告
+- [x] `package.v2.json` 版本号与 `__init__.py` 中 `plugin_version` 一致（均为 1.0.0）
+- [x] 插件在 `MoviePilot-Plugins/package.v2.json` 中正确注册

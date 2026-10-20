@@ -1,0 +1,33 @@
+{
+  "DoubanUpcoming": {
+    "name": "刷豆瓣助手",
+    "description": "省去打开豆瓣的过程，提供一条龙订阅推送服务。定时获取豆瓣即将播出/热门影视榜单，支持通过豆瓣UID获取想看列表并自动订阅未上映条目。",
+    "labels": "豆瓣,RSS,订阅,想看",
+    "version": "1.9.7",
+    "icon": "douban.png",
+    "author": "lovesakuratears",
+    "author_url": "https://github.com/lovesakuratears/MoviePilot-Plugins",
+    "system_version": ">=2.0.0",
+    "level": 1,
+    "history": {
+      "v1.9.7": "修复豆瓣图片URL防盗链导致飞书通知/首页UI无法显示海报：_get_best_image_url改为TMDB海报>豆瓣图片>占位图；__send_douban_notification绝不发送豆瓣图片URL；豆瓣想看强制获取TMDB海报而非依赖RSS豆瓣图片；__refresh_missing_images也刷新有豆瓣图片但无TMDB海报的条目",
+      "v1.9.6": "CPU优化：__refresh_missing_images添加30分钟冷却+批量5条限制+0.5s延迟；__fetch_coming详情获取间添加0.5s延迟；强制图片：新增_get_best_image_url统一TMDB海报>豆瓣海报>占位图优先级；豆瓣想看条目补充TMDB海报获取；所有pushed_items保存点（__run_push/__api_interest/__api_not_interest/__process_douban_wish）统一使用_get_best_image_url确保图片不丢失",
+      "v1.9.5": "通知添加榜单标识（【即将上映】/【实时热门】）和富文本格式（地区/类型/导演/主演分列）；豆瓣想看保存海报到pushed_items；新增__refresh_missing_images补全历史缺失海报；CPU优化：detail阶段缓存TMDB结果避免__send_douban_notification重复匹配；__process_douban_wish增加0.3s延迟防CPU峰值；首页UI无海报时显示占位图",
+      "v1.9.4": "修复INFO级别日志污染（移除\"未找到播放平台信息\"和\"未找到搜索结果摘要\"日志）；为条目添加来源标记（即将上映/实时热门），推送日志标注榜单来源；修复播放平台搜索使用含季数标题导致TMDB匹配失败（改用剥离季数的display_title搜索）",
+      "v1.9.3": "修复首页卡片海报不显示和上映时间格式（去掉时分秒，保留到日/月/年）；修复通知链接默认跳转MoviePilot页面（设置link为豆瓣链接）；修复通知缺失搜预告按钮；pushed_items保存release_date字段",
+      "v1.9.2": "修复通知格式季数重复（标题剥离季数如 谜探路德维希 第二季→谜探路德维希）；新增 __fetch_streaming_platform_by_tmdb_id 直接用 TMDB ID 查平台（不触发 MetaInfo 创建，减少日志污染）；优化 __send_douban_notification 先匹配 TMDB 一次复用结果（海报/链接/平台），避免重复调用",
+      "v1.9.1": "修复海报无法获取（__try_tmdb_match 仅 douban_id 时也能匹配 TMDB，新增 __normalize_tmdb_result 兼容多种返回格式）；修复清除历史后首条推送被跳过（_last_notify_title 同步清除）；修复队列推进问题（__run_push 循环跳过已发送条目直到找到可发送的）",
+      "v1.9.0": "TMDB匹配切换为官方MediaChain API（get_tmdbinfo_by_doubanid+recognize_media，参照 doubansync）；元数据获取优先TMDB（海报/简介/日期/集数/季数/片长），豆瓣抓取降级为备用；TmdbChain 退到回退方案",
+      "v1.8.1": "网格布局4列（VRow+VCol lg=3）；恢复感兴趣/不感兴趣分组标题；不感兴趣折叠隐藏；时间显示上映日期",
+      "v1.8.0": "UI完全对齐doubansync（扁平列表，移除分组标题）；有兴趣后自动推送下一条；订阅成功不弹通知仅失败提示；新增订阅去重检测（避免TMDB+豆瓣重复订阅）",
+      "v1.7.0": "重构首页UI为扁平列表布局（移除VRow/VCol包裹，空状态改为简洁文本，对齐doubansync样式）",
+      "v1.6.0": "修复清除历史记录后设置开关不恢复默认状态；修复通知一次性推送两条；重构首页UI为水平卡片布局（VCard+flex-row+VDialogCloseBtn）；新增单条历史记录删除API；时间显示优先显示预计播出日期；通知格式调整：评分行由播放平台代替（带✨前缀），保留简介；通知链接优先使用TMDB链接（无则豆瓣）；通知海报优先使用TMDB海报（无则豆瓣）",
+      "v1.5.0": "重构UI界面为卡片式布局（VListItem+海报+评分），参考官方豆瓣想看插件样式；推送记录保存海报/评分/年份/类型等详情；优化空状态展示",
+      "v1.4.0": "修复TMDB导入路径错误（改用TmdbChain）；修复订阅mtype应为MediaType枚举（解决'str' object has no attribute 'value'错误）；修复通知按钮点击无反应（兼容多种callback_data格式）；新增自动订阅想看开关（默认关闭，解决未操作自动订阅问题）；优化启用速度（仅推送条目请求详情，首次想看处理延迟加长且仅自动订阅时触发）；恢复查看详情和搜预告链接按钮；修复播放平台行前置空格问题；播放平台搜索改用TmdbChain",
+      "v1.3.0": "修复插件未启用时立即执行开关仍运行的问题；修复豆瓣想看列表RSS地址错误（改用官方feed）；修复播放平台搜索误判问题（优先TMDB获取）；新增停止按钮结束本轮推送；通知按钮改用buttons+callback_data格式支持回调；播放平台搜索优先从TMDB watch providers获取，无结果回退Bing搜索",
+      "v1.2.0": "新增开播前24小时提醒、播放平台搜索（Bing）、豆瓣页面抓取补充海报/评分/集数/日期、豆瓣订阅（MoviePilot API）、通知搜预告按钮（跳转抖音）、清除历史记录改为开关、立即执行一次",
+      "v1.1.0": "插件重命名为刷豆瓣助手；新增豆瓣UID和豆瓣想看功能，支持自动获取用户想看列表并订阅未上映条目；榜单数据源精简为即将上映和实时热门",
+      "v1.0.0": "初始版本，支持RSSHub数据获取、富媒体通知推送、TMDB/豆瓣订阅、本地追踪"
+    }
+  }
+}
