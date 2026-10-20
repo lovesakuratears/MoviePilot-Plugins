@@ -32,5 +32,19 @@
       "v1.0.1": "修复详情页按钮文字不显示（VBtn 标签移至顶层 text 字段）；修复各信息区块文字排版错乱（div 改为块级 p 标签）",
       "v1.0.0": "首个版本：设备授权登录、令牌自动续期、OpenAI 兼容聊天/模型端点、额度查询、每日签到、智能体工具、详情页管理。"
     }
+  },
+  "OurFreeModel": {
+    "name": "我们的免费模型",
+    "description": "把免费模型车道（OpenCode 免密 / Kilo 免费池）接入智能助手：OpenAI 兼容接口、模型目录、免密免注册。",
+    "labels": "AI,智能助手",
+    "version": "1.0.0",
+    "icon": "Ourfree_A.png",
+    "author": "lovesakuratears",
+    "author_url": "https://github.com/lovesakuratears/MoviePilot-Plugins",
+    "system_version": ">=3.0.0",
+    "level": 1,
+    "history": {
+      "v1.0.0": "首个版本：OpenCode 免密车道与 Kilo 免费池接入、OpenAI 兼容聊天/模型端点、三线协议透明翻译、免密闸门与会话铸造移植、思考强度档位、智能体工具、目录自动刷新。"
+    }
   }
 }
