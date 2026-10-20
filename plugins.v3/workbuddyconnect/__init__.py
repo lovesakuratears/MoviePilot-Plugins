@@ -998,32 +998,32 @@ class WorkBuddyConnect(_PluginBase):
         # 登录状态区块
         if status.signedIn:
             login_html = (
-                f"<div><b>已登录</b>：{status.nickname or '账号'}"
-                f"（{status.regionLabel}）</div>"
-                f"<div>令牌有效期至 {fmt_ts(status.expiresAtMs)}</div>"
+                f"<p style='margin:0'><b>已登录</b>：{status.nickname or '账号'}"
+                f"（{status.regionLabel}）</p>"
+                f"<p style='margin:4px 0 0 0'>令牌有效期至 {fmt_ts(status.expiresAtMs)}</p>"
             )
             login_type = "success"
         elif status.pendingLogin:
             auth_url = status.pendingLogin.get("authUrl") or ""
             login_html = (
-                "<div><b>等待浏览器授权</b>：请打开下方链接完成登录，"
-                "完成后点击「我已完成授权」或等待自动确认。</div>"
-                f'<div style="margin:8px 0"><a href="{auth_url}" target="_blank" '
-                f'rel="noopener noreferrer">{auth_url}</a></div>'
+                "<p style='margin:0'><b>等待浏览器授权</b>：请打开下方链接完成登录，"
+                "完成后点击「我已完成授权」或等待自动确认。</p>"
+                f'<p style="margin:8px 0 0 0"><a href="{auth_url}" target="_blank" '
+                f'rel="noopener noreferrer">{auth_url}</a></p>'
             )
             login_type = "warning"
         else:
-            login_html = "<div><b>未登录</b>：点击「生成登录链接」，在浏览器完成 WorkBuddy 授权。</div>"
+            login_html = "<p style='margin:0'><b>未登录</b>：点击「生成登录链接」，在浏览器完成 WorkBuddy 授权。</p>"
             login_type = "info"
 
         # 额度区块
         if status.credits is not None:
             credits = status.credits
             if credits.unlimited:
-                credits_html = f"<div>企业额度：<b>不限量</b>"
+                credits_html = f"<p style='margin:0'>企业额度：<b>不限量</b>"
                 if credits.cycleResetTime:
                     credits_html += f"（周期重置 {credits.cycleResetTime}）"
-                credits_html += "</div>"
+                credits_html += "</p>"
             else:
                 rows = "".join(
                     f"<tr><td style='padding:2px 12px 2px 0'>{p.packageName}</td>"
@@ -1032,12 +1032,12 @@ class WorkBuddyConnect(_PluginBase):
                     for p in credits.accounts
                 )
                 credits_html = (
-                    f"<div>剩余积分：<b>{credits.total:g}</b>"
-                    + (f" / {credits.totalSize:g}" if credits.totalSize else "") + "</div>"
+                    f"<p style='margin:0'>剩余积分：<b>{credits.total:g}</b>"
+                    + (f" / {credits.totalSize:g}" if credits.totalSize else "") + "</p>"
                     + (f"<table style='border-collapse:collapse;margin-top:4px'>{rows}</table>" if rows else "")
                 )
         else:
-            credits_html = "<div>额度信息尚未获取（登录后自动刷新）。</div>"
+            credits_html = "<p style='margin:0'>额度信息尚未获取（登录后自动刷新）。</p>"
 
         # 模型区块
         if status.models:
@@ -1051,25 +1051,33 @@ class WorkBuddyConnect(_PluginBase):
                 for m in status.models
             )
             models_html = (
-                f"<div>共 {len(status.models)} 个模型（来源：{status.catalogSource}）</div>"
+                f"<p style='margin:0'>共 {len(status.models)} 个模型（来源：{status.catalogSource}）</p>"
                 f"<table style='border-collapse:collapse;margin-top:4px'>{model_rows}</table>"
             )
         else:
-            models_html = "<div>暂无模型（登录后自动加载目录）。</div>"
+            models_html = "<p style='margin:0'>暂无模型（登录后自动加载目录）。</p>"
 
+        guide_rows = [
+            ("LLM提供商", "openai"),
+            ("LLM基础URL", status.llmBaseUrl),
+            ("LLM API密钥", status.llmApiKey),
+            ("LLM模型名称", status.defaultModel or "glm-5.2"),
+        ]
+        guide_items = "".join(
+            f"<p style='margin:2px 0'><code>{label}</code>：<code>{value}</code></p>"
+            for label, value in guide_rows
+        )
         guide_html = (
-            "<div style='line-height:1.8'>在「设定 → 系统 → 基础设置 → 智能助手」中填写：</div>"
-            f"<div><code>LLM提供商</code>：openai</div>"
-            f"<div><code>LLM基础URL</code>：<code>{status.llmBaseUrl}</code></div>"
-            f"<div><code>LLM API密钥</code>：<code>{status.llmApiKey}</code></div>"
-            f"<div><code>LLM模型名称</code>：<code>{status.defaultModel or 'glm-5.2'}</code></div>"
+            "<p style='margin:0 0 6px 0'>在「设定 → 系统 → 基础设置 → 智能助手」中填写：</p>"
+            + guide_items
         )
 
         def button(text: str, path: str, method: str = "POST", params: Optional[dict] = None,
                    color: str = "primary") -> dict:
             return {
                 "component": "VBtn",
-                "props": {"text": text, "color": color, "variant": "tonal", "style": "margin-right:8px"},
+                "text": text,
+                "props": {"color": color, "variant": "tonal", "class": "mr-2 mb-2"},
                 "events": {"click": {"api": f"plugin/{plugin_id}/{path}", "method": method,
                                      "params": params or {}}},
             }
