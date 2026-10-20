@@ -20,13 +20,15 @@
     "name": "WorkBuddy连接器",
     "description": "将 WorkBuddy（国内版）/ WorkBuddy AI（国际版）模型接入 MoviePilot 智能助手：OpenAI 兼容接口、额度查询、每日签到。",
     "labels": "AI,智能助手",
-    "version": "1.0.0",
+    "version": "1.0.2",
     "icon": "Workbuddy_A.png",
     "author": "lovesakuratears",
     "author_url": "https://github.com/lovesakuratears/MoviePilot-Plugins",
     "system_version": ">=3.0.0",
     "level": 1,
     "history": {
+      "v1.0.2": "修正插件作者与项目链接为 lovesakuratears/MoviePilot-Plugins",
+      "v1.0.1": "修复详情页按钮文字不显示（VBtn 标签移至顶层 text 字段）；修复各信息区块文字排版错乱（div 改为块级 p 标签）",
       "v1.0.0": "首个版本：设备授权登录、令牌自动续期、OpenAI 兼容聊天/模型端点、额度查询、每日签到、智能体工具、详情页管理。"
     }
   }
