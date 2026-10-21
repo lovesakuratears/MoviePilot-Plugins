@@ -56,6 +56,9 @@
 
 ## 协议要点
 
+- **配置双通道**：vue 模式由远程 `Config` 组件渲染；`get_form()` 同时提供 vuetify
+  兜底表单（启用开关），宿主回落 vuetify 渲染（旧版前端/远程组件加载失败）时
+  设置页仍有可用配置项，不会空白。
 - **桥接边界**：`bridge.py` 是插件唯一允许 `import app.*` 内部实现的模块
   （`app.api.endpoints.agent`、`app.application.messaging.chat` 等），其余文件
   只依赖 V3 稳定 SDK（`app.sdk.plugin`）。`system_version` 声明 `>=3.0.0`。
@@ -103,6 +106,8 @@ npm run build     # 产物输出到 dist/（remoteEntry.js 位于 dist/assets/�
 
 ## 版本
 
+- v1.0.1：修复设置页空白（get_form 补 vuetify 兜底表单）；联邦构建对齐官方指南
+  （vue shared singleton、PostCSS 剔除 vuetify 全局 CSS）；Config 补空值防护与 switch 事件。
 - v1.0.0：侧边栏全页入口、SSE 流式对话（一次性票据鉴权）、工具卡片、多会话管理。
 
 ## 免责声明

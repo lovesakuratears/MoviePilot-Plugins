@@ -17,7 +17,7 @@ class EnhancedAgent(_PluginBase):
 
     plugin_name = "AI助手增强"
     plugin_desc = "为内置 Agent 提供侧边栏全页入口：流式对话、工具卡片与多会话管理。"
-    plugin_version = "1.0.0"
+    plugin_version = "1.0.1"
     plugin_label = "智能助手"
     plugin_author = "lovesakuratears"
     plugin_config_prefix = "enhancedagent_"
@@ -138,9 +138,38 @@ class EnhancedAgent(_PluginBase):
 
     def get_form(self) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
         """
-        返回插件配置表单与默认配置；vue 模式下表单由 Config 组件渲染。
+        返回插件配置表单与默认配置。
+
+        vue 模式下由远程 Config 组件渲染；此处仍提供 vuetify 兜底表单，
+        保证宿主回落 vuetify 渲染（旧版前端/远程组件加载失败）时设置页不空白。
         """
-        return [], {"enabled": True}
+        form: List[Dict[str, Any]] = [
+            {
+                "component": "VForm",
+                "content": [
+                    {
+                        "component": "VAlert",
+                        "props": {
+                            "type": "info",
+                            "variant": "tonal",
+                            "text": "本插件为内置 Agent 提供侧边栏全页入口：流式对话、"
+                                    "工具卡片与多会话管理。启用后侧边栏出现「AI助手增强」入口。",
+                        },
+                    },
+                    {"component": "VRow", "content": [
+                        {"component": "VCol", "props": {"cols": 12, "md": 4}, "content": [
+                            {"component": "VSwitch", "props": {
+                                "model": "enabled",
+                                "label": "启用插件",
+                                "hint": "启用后侧边栏显示「AI助手增强」入口",
+                                "persistent-hint": True,
+                            }},
+                        ]},
+                    ]},
+                ],
+            }
+        ]
+        return form, {"enabled": True}
 
     def get_page(self) -> Optional[List[Dict[str, Any]]]:
         """

@@ -6,12 +6,16 @@ import { reactive } from 'vue'
 const props = defineProps({
   initialConfig: { type: Object, default: () => ({}) },
   api: { type: Object, default: null },
+  pluginId: { type: String, default: '' },
+  sourcePluginId: { type: String, default: '' },
+  nativeSubscribe: { type: Function, default: null },
 })
 
-const emit = defineEmits(['save', 'close'])
+const emit = defineEmits(['save', 'close', 'switch'])
 
+const initial = (typeof props.initialConfig === 'object' && props.initialConfig) || {}
 const form = reactive({
-  enabled: props.initialConfig.enabled !== false,
+  enabled: initial.enabled !== false,
 })
 
 function onSave() {
@@ -21,6 +25,7 @@ function onSave() {
 
 <template>
   <div class="cf-root">
+    <div class="cf-title">AI助手增强 - 插件配置</div>
     <label class="cf-row">
       <input v-model="form.enabled" type="checkbox" />
       <span>启用插件（启用后侧边栏显示「AI助手增强」入口）</span>
@@ -39,6 +44,11 @@ function onSave() {
 .cf-root {
   padding: 12px 4px;
   font-size: 14px;
+}
+.cf-title {
+  margin: 0 0 12px;
+  font-size: 16px;
+  font-weight: 600;
 }
 .cf-row {
   display: flex;

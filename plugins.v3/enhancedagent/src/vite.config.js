@@ -19,13 +19,37 @@ export default defineConfig({
         './AppPage': './src/components/AppPage.vue',
       },
       shared: {
-        vue: { requiredVersion: false, generate: false },
+        // 官方联邦指南强制：vue/vuetify 均 singleton，复用宿主实例，
+        // 避免双 Vue 实例导致远程组件静默渲染空白。
+        vue: { requiredVersion: false, generate: false, singleton: true },
         vuetify: { requiredVersion: false, generate: false, singleton: true },
         'vuetify/styles': { requiredVersion: false, generate: false, singleton: true },
       },
       format: 'esm',
     }),
   ],
+  css: {
+    postcss: {
+      plugins: [{
+        postcssPlugin: 'vuetify-filter',
+        Root(root) {
+          // 官方强制：移除 node_modules 中 vuetify/@mdi 的全局 CSS，避免污染主程序
+          const sourcePath = root.source?.input?.file?.replaceAll('\\', '/') || ''
+          if (sourcePath.includes('/node_modules/vuetify/') ||
+              sourcePath.includes('/node_modules/@mdi/')) {
+            root.nodes = []
+            return
+          }
+          root.walkRules(rule => {
+            if (rule.selector &&
+                (rule.selector.includes('.v-') || rule.selector.includes('.mdi-'))) {
+              rule.remove()
+            }
+          })
+        },
+      }],
+    },
+  },
   build: {
     target: 'esnext',
     cssCodeSplit: true,

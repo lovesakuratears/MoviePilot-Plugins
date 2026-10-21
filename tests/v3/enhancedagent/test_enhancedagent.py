@@ -223,7 +223,7 @@ class TestPluginMeta(unittest.TestCase):
 
     def test_metadata(self):
         self.assertEqual(EnhancedAgent.plugin_name, "AI助手增强")
-        self.assertEqual(EnhancedAgent.plugin_version, "1.0.0")
+        self.assertEqual(EnhancedAgent.plugin_version, "1.0.1")
         self.assertEqual(EnhancedAgent.plugin_author, "lovesakuratears")
         self.assertEqual(EnhancedAgent.plugin_config_prefix, "enhancedagent_")
         self.assertEqual(EnhancedAgent.auth_level, 1)
@@ -255,8 +255,13 @@ class TestPluginMeta(unittest.TestCase):
 
     def test_form_defaults(self):
         form, defaults = EnhancedAgent().get_form()
-        self.assertEqual(form, [])
         self.assertEqual(defaults, {"enabled": True})
+        # 兜底表单必须非空且包含 enabled 开关：宿主回落 vuetify 渲染时设置页不能空白
+        self.assertTrue(form)
+        self.assertEqual(form[0]["component"], "VForm")
+        serialized = repr(form)
+        self.assertIn("VSwitch", serialized)
+        self.assertIn("enabled", serialized)
 
     def test_api_routes(self):
         routes = {(item["path"], tuple(item["methods"])): item for item in EnhancedAgent().get_api()}
