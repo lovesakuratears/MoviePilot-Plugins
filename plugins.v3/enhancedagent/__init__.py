@@ -1,7 +1,7 @@
 """
 EnhancedAgent：内置 Agent 的侧边栏全页入口插件。
 
-提供「AI 助手」全页路由（Vue 联邦组件），承载流式对话、工具卡片与
+提供「AI助手增强」全页路由（Vue 联邦组件），承载流式对话、工具卡片与
 多会话管理；会话能力复用内置 Agent 的会话接口，插件自身不复制业务逻辑。
 """
 
@@ -15,7 +15,7 @@ from . import bridge
 class EnhancedAgent(_PluginBase):
     """内置 Agent 全页入口与多会话增强插件。"""
 
-    plugin_name = "AI 助手"
+    plugin_name = "AI助手增强"
     plugin_desc = "为内置 Agent 提供侧边栏全页入口：流式对话、工具卡片与多会话管理。"
     plugin_version = "1.0.0"
     plugin_label = "智能助手"
@@ -57,7 +57,7 @@ class EnhancedAgent(_PluginBase):
         return [
             {
                 "nav_key": "main",
-                "title": "AI 助手",
+                "title": "AI助手增强",
                 "icon": "mdi-robot-happy",
                 "section": "start",
                 "permission": "manage",

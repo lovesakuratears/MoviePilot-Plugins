@@ -1,5 +1,5 @@
 <script setup>
-// 「AI 助手」侧边栏全页入口：会话列表 + 流式对话。
+// 「AI助手增强」侧边栏全页入口：会话列表 + 流式对话。
 import { computed, onBeforeUnmount, ref } from 'vue'
 import { useAgentApi } from '../composables/useAgentApi.js'
 import { runAgentStream } from '../composables/useAgentStream.js'

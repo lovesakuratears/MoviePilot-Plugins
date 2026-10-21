@@ -222,7 +222,7 @@ class TestPluginMeta(unittest.TestCase):
     """插件类元数据与声明。"""
 
     def test_metadata(self):
-        self.assertEqual(EnhancedAgent.plugin_name, "AI 助手")
+        self.assertEqual(EnhancedAgent.plugin_name, "AI助手增强")
         self.assertEqual(EnhancedAgent.plugin_version, "1.0.0")
         self.assertEqual(EnhancedAgent.plugin_author, "lovesakuratears")
         self.assertEqual(EnhancedAgent.plugin_config_prefix, "enhancedagent_")
@@ -244,7 +244,7 @@ class TestPluginMeta(unittest.TestCase):
         nav = plugin.get_sidebar_nav()
         self.assertEqual(len(nav), 1)
         self.assertEqual(nav[0]["nav_key"], "main")
-        self.assertEqual(nav[0]["title"], "AI 助手")
+        self.assertEqual(nav[0]["title"], "AI助手增强")
         self.assertEqual(nav[0]["permission"], "manage")
 
     def test_init_plugin_disabled_hides_nav(self):

@@ -23,7 +23,7 @@ function onSave() {
   <div class="cf-root">
     <label class="cf-row">
       <input v-model="form.enabled" type="checkbox" />
-      <span>启用插件（启用后侧边栏显示「AI 助手」入口）</span>
+      <span>启用插件（启用后侧边栏显示「AI助手增强」入口）</span>
     </label>
     <p class="cf-hint">
       二期将在此提供上下文窗口、压缩策略等 Agent 调优项（PRD O1/O2/O7）。

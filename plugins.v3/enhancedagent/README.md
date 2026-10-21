@@ -1,4 +1,4 @@
-# EnhancedAgent（AI 助手）
+# EnhancedAgent（AI助手增强）
 
 为 MoviePilot 内置 Agent 提供**侧边栏全页入口**：流式对话、工具调用卡片与多会话管理。
 会话能力完全复用内置 Agent 接口，插件不复制业务逻辑（桥接层集中在 `bridge.py`）。
@@ -9,7 +9,7 @@
 
 ## 功能
 
-- **侧边栏全页入口**：「AI 助手」全页路由（Vue 联邦组件，`get_sidebar_nav`）
+- **侧边栏全页入口**：「AI助手增强」全页路由（Vue 联邦组件，`get_sidebar_nav`）
 - **SSE 流式对话**：fetch + ReadableStream 自解析，事件协议与内置 Agent 一致
   （start/delta/tool/thinking/attachment/choice/done/error）
 - **工具调用卡片**：执行中/完成/失败生命周期、思考状态、选择卡片
@@ -22,7 +22,7 @@
 1. 将本仓库注册为本地插件源：系统设置 `PLUGIN_LOCAL_REPO_PATHS` 指向仓库根目录
    （含 `package.v3.json` 的目录，相对路径以 MoviePilot 根目录解析）。
 2. 插件市场选择「本地」，安装并启用 `EnhancedAgent`。
-3. 验证：`GET /api/v1/plugin/sidebar_nav` 出现「AI 助手」；侧边栏点击进入全页。
+3. 验证：`GET /api/v1/plugin/sidebar_nav` 出现「AI助手增强」；侧边栏点击进入全页。
 
 ### 手动安装
 
@@ -34,7 +34,7 @@
 
 | 步骤 | 操作 |
 | --- | --- |
-| 1 | 启用插件后，主界面左侧导航栏出现「AI 助手」（`mdi-robot-happy`） |
+| 1 | 启用插件后，主界面左侧导航栏出现「AI助手增强」（`mdi-robot-happy`） |
 | 2 | 点击进入全页聊天：输入即流式输出，工具调用以卡片呈现 |
 | 3 | 左侧会话列表：新建（生成 client UUID）/ 切换 / 重命名 / 删除 / 停止运行中任务 |
 | 4 | `done` 后展示消息快照自动回写，刷新页面历史仍在 |

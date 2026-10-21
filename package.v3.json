@@ -49,7 +49,7 @@
     }
   },
   "EnhancedAgent": {
-    "name": "AI 助手",
+    "name": "AI助手增强",
     "description": "为内置 Agent 提供侧边栏全页入口：流式对话、工具卡片与多会话管理。",
     "labels": "智能助手,Agent",
     "version": "1.0.0",

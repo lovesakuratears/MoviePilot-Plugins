@@ -7,7 +7,7 @@ defineProps({
 </script>
 
 <template>
-  <div class="db-root">AI 助手暂无仪表板内容。</div>
+  <div class="db-root">AI助手增强暂无仪表板内容。</div>
 </template>
 
 <style scoped>
