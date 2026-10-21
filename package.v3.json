@@ -47,5 +47,19 @@
     "history": {
       "v1.0.0": "首个版本：OpenCode 免密车道与 Kilo 免费池接入、OpenAI 兼容聊天/模型端点、三线协议透明翻译、免密闸门与会话铸造移植、思考强度档位、智能体工具、目录自动刷新。"
     }
+  },
+  "EnhancedAgent": {
+    "name": "AI 助手",
+    "description": "为内置 Agent 提供侧边栏全页入口：流式对话、工具卡片与多会话管理。",
+    "labels": "智能助手,Agent",
+    "version": "1.0.0",
+    "icon": "Enhancedagent_A.png",
+    "author": "lovesakuratears",
+    "author_url": "https://github.com/lovesakuratears/MoviePilot-Plugins",
+    "system_version": ">=3.0.0",
+    "level": 1,
+    "history": {
+      "v1.0.0": "首个版本：侧边栏全页入口、SSE 流式对话（一次性票据鉴权）、工具调用卡片、多会话管理（新建/切换/重命名/删除/停止）。"
+    }
   }
 }
