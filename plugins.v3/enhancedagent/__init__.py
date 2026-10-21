@@ -17,7 +17,7 @@ class EnhancedAgent(_PluginBase):
 
     plugin_name = "AI助手增强"
     plugin_desc = "为内置 Agent 提供侧边栏全页入口：流式对话、工具卡片与多会话管理。"
-    plugin_version = "1.0.1"
+    plugin_version = "1.0.2"
     plugin_label = "智能助手"
     plugin_author = "lovesakuratears"
     plugin_config_prefix = "enhancedagent_"

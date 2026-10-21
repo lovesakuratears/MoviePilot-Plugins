@@ -97,6 +97,8 @@ npm run build     # 产物输出到 dist/（remoteEntry.js 位于 dist/assets/�
 
 ## 已知限制
 
+- **侧栏入口有缓存**：宿主前端缓存 `plugin/sidebar_nav` 结果，启用插件或变更入口后
+  需**刷新页面**才会显示/消失「AI助手增强」入口（宿主行为，非插件可控制）
 - `bridge.py` 依赖 `app.api.*` / `app.application.*` 内部实现（非公开 SDK），
   MoviePilot 核心重构后可能需要跟进适配；后续版本计划下沉到 `app.sdk`
 - `PUT display` 全量覆盖展示快照，与内置面板并发写入可能互踩（约定单客户端写入）
@@ -106,8 +108,11 @@ npm run build     # 产物输出到 dist/（remoteEntry.js 位于 dist/assets/�
 
 ## 版本
 
-- v1.0.1：修复设置页空白（get_form 补 vuetify 兜底表单）；联邦构建对齐官方指南
-  （vue shared singleton、PostCSS 剔除 vuetify 全局 CSS）；Config 补空值防护与 switch 事件。
+- v1.0.2：设置界面修复——vue shared 去 singleton（对齐宿主 `shared:['vue','vuetify']`
+  契约，修复远程组件运行异常导致的保存不生效/界面异常）；Config 重写为 Vuetify
+  组件树（官方示例风格）；AppPage props 宽松化与布局贴合宿主容器。
+- v1.0.1：修复设置页空白（get_form 补 vuetify 兜底表单）；PostCSS 剔除 vuetify
+  全局 CSS；Config 补空值防护与 switch 事件。
 - v1.0.0：侧边栏全页入口、SSE 流式对话（一次性票据鉴权）、工具卡片、多会话管理。
 
 ## 免责声明

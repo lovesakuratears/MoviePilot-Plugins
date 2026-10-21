@@ -7,9 +7,11 @@ import SessionList from './SessionList.vue'
 import ChatPane from './ChatPane.vue'
 
 const props = defineProps({
-  api: { type: Object, required: true },
-  pluginId: { type: String, required: true },
+  api: { type: Object, default: () => ({}) },
+  pluginId: { type: String, default: '' },
   navKey: { type: String, default: 'main' },
+  sourcePluginId: { type: String, default: '' },
+  nativeSubscribe: { type: Function, default: null },
 })
 
 const api = useAgentApi(props.api, props.pluginId)
@@ -394,9 +396,7 @@ onBeforeUnmount(cancelStream)
 .ea-page {
   display: flex;
   height: 100%;
-  min-height: 480px;
-  border: 1px solid rgba(128, 128, 128, 0.25);
-  border-radius: 8px;
+  min-height: 0;
   overflow: hidden;
 }
 .ea-side {

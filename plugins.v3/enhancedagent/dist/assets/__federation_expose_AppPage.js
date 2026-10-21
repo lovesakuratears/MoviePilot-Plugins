@@ -1,5 +1,916 @@
-import{importShared as y}from"./__federation_fn_import.js";import{_ as D}from"./_plugin-vue_export-helper.js";function $e(s){if(s&&typeof s=="object"&&"success"in s){if(!s.success)throw new Error(s.message||"请求失败");return s.data}return s}function ke(s,_){const i=`plugin/${_}`,c=(a,n,d)=>{const l=s&&s[a];return typeof l!="function"?Promise.reject(new Error(`注入的 api 对象不支持 ${a} 方法`)):Promise.resolve(l.call(s,n,d)).then($e)};return{issueTicket:()=>c("post",`${i}/sse_ticket`,{}),listSessions:(a=1,n=50)=>c("get",`${i}/sessions?page=${a}&count=${n}`),getSession:a=>c("get",`${i}/sessions/${a}`),saveDisplay:(a,n)=>c("put",`${i}/sessions/${a}/display`,n),deleteSession:a=>c("delete",`${i}/sessions/${a}`),stopSession:a=>c("post",`${i}/sessions/${a}/stop`,{}),sessionsBusy:a=>c("post",`${i}/sessions_busy`,{session_ids:a})}}function we(s){let _="";const i=[];for(const c of s.split(`
-`))c.startsWith(":")||(c.startsWith("event:")?_=c.slice(6).trim():c.startsWith("data:")&&i.push(c.slice(5).trim()));if(!i.length)return null;try{const c=JSON.parse(i.join(`
-`));return _?{...c,__event:_}:c}catch{return null}}async function be({url:s,payload:_,onEvent:i,signal:c}){const a=await fetch(s,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(_),signal:c});if(!a.ok||!a.body)throw new Error(`流式请求失败（HTTP ${a.status}）`);const n=a.body.getReader(),d=new TextDecoder("utf-8");let l="";for(;;){const{done:u,value:m}=await n.read();if(u)break;l+=d.decode(m,{stream:!0});let r;for(;(r=l.indexOf(`
+import { importShared } from './__federation_fn_import.js';
+import { _ as _export_sfc } from './_plugin-vue_export-helper.js';
 
-`))>=0;){const w=l.slice(0,r);l=l.slice(r+2);const V=we(w);V&&i(V)}}}const{createElementVNode:p,openBlock:x,createElementBlock:B,createCommentVNode:z,renderList:Se,Fragment:Ce,toDisplayString:R,createTextVNode:Q,withModifiers:xe,normalizeClass:Be}=await y("vue"),Ne={class:"sl-root"},Ee={key:0,class:"sl-empty"},De=["onClick"],Ve={class:"sl-item-main"},Te={class:"sl-item-title"},Ie={key:0,class:"sl-badge",title:"运行中"},Ae={class:"sl-item-preview"},Me={class:"sl-item-time"},Le=["onClick"],Fe={key:0,class:"sl-menu"},Pe=["onClick"],je=["onClick"],{ref:Oe}=await y("vue"),Ue={__name:"SessionList",props:{sessions:{type:Array,default:()=>[]},activeId:{type:String,default:""},busyMap:{type:Object,default:()=>({})}},emits:["new","select","rename","remove"],setup(s,{emit:_}){const i=_,c=Oe("");function a(l){if(!l)return"";const u=new Date(l);if(Number.isNaN(u.getTime()))return String(l);const r=Date.now()-u.getTime();return r<60*1e3?"刚刚":r<60*60*1e3?`${Math.floor(r/6e4)} 分钟前`:r<24*60*60*1e3?`${Math.floor(r/36e5)} 小时前`:u.toLocaleDateString()}function n(l){c.value="";const u=window.prompt("会话标题",l.title||"");u&&u.trim()&&i("rename",l,u.trim())}function d(l){c.value="",window.confirm(`删除会话「${l.title||"未命名"}」？该操作不可恢复。`)&&i("remove",l)}return(l,u)=>(x(),B("div",Ne,[p("button",{class:"sl-new",onClick:u[0]||(u[0]=m=>i("new"))},"＋ 新会话"),s.sessions.length?z("",!0):(x(),B("div",Ee,"暂无历史会话")),(x(!0),B(Ce,null,Se(s.sessions,m=>(x(),B("div",{key:m.session_id,class:Be(["sl-item",{"sl-item-on":m.session_id===s.activeId}]),onClick:r=>i("select",m)},[p("div",Ve,[p("div",Te,[s.busyMap[m.session_id]?(x(),B("span",Ie,"●")):z("",!0),Q(" "+R(m.title||"未命名会话"),1)]),p("div",Ae,R(m.preview||""),1),p("div",Me,R(a(m.updated_at)),1)]),p("div",{class:"sl-item-menu",onClick:xe(r=>c.value=c.value===m.session_id?"":m.session_id,["stop"])},[u[1]||(u[1]=Q(" ⋯ ",-1)),c.value===m.session_id?(x(),B("div",Fe,[p("div",{class:"sl-menu-item",onClick:r=>n(m)},"重命名",8,Pe),p("div",{class:"sl-menu-item sl-menu-danger",onClick:r=>d(m)},"删除",8,je)])):z("",!0)],8,Le)],10,De))),128))]))}},ze=D(Ue,[["__scopeId","data-v-0eb50901"]]),{toDisplayString:M,createElementVNode:K,openBlock:X,createElementBlock:Y,createCommentVNode:Re,normalizeClass:Ke}=await y("vue"),qe={class:"tc-status"},We={class:"tc-name"},He={key:0,class:"tc-msg"},Je={class:"tc-state"},{computed:Ge}=await y("vue"),Qe={__name:"ToolCard",props:{tool:{type:Object,required:!0}},setup(s){const _=s,i=Ge(()=>({running:"执行中",done:"完成",error:"失败"})[_.tool.status]||_.tool.status);return(c,a)=>(X(),Y("div",{class:Ke(["tc-root",`tc-${s.tool.status||"done"}`])},[K("span",qe,M(s.tool.status==="running"?"⟳":s.tool.status==="error"?"✕":"✓"),1),K("span",We,M(s.tool.tool_name||"工具调用"),1),s.tool.message?(X(),Y("span",He,M(s.tool.message),1)):Re("",!0),K("span",Je,M(i.value),1)],2))}},Z=D(Qe,[["__scopeId","data-v-cd1eb36f"]]),{toDisplayString:$,createElementVNode:L,openBlock:h,createElementBlock:f,createCommentVNode:b,createTextVNode:ee,renderList:N,Fragment:S,createBlock:te,normalizeClass:Xe}=await y("vue"),Ye={class:"mi-role"},Ze={class:"mi-body"},et={key:0,class:"mi-thinking"},tt={key:0},st={key:0,class:"mi-text"},nt={key:0,class:"mi-text"},ot={key:3,class:"mi-attachments"},at=["href"],it={class:"mi-choice-title"},ct={class:"mi-choice-buttons"},lt=["disabled","onClick"],rt={key:0,class:"mi-choice-selected"},ut={key:4,class:"mi-error"},dt={__name:"MessageItem",props:{message:{type:Object,required:!0}},emits:["choice"],setup(s,{emit:_}){const i=_;return(c,a)=>(h(),f("div",{class:Xe(["mi-root",`mi-${s.message.role}`])},[L("div",Ye,$(s.message.role==="user"?"我":"Agent"),1),L("div",Ze,[s.message.thinking?(h(),f("div",et,[a[0]||(a[0]=ee(" 思考中",-1)),s.message.thinking_elapsed_ms?(h(),f("span",tt,"（"+$(Math.round(s.message.thinking_elapsed_ms/1e3))+"s）",1)):b("",!0),a[1]||(a[1]=ee("… ",-1))])):b("",!0),(s.message.segments||[]).length?(h(!0),f(S,{key:1},N(s.message.segments,(n,d)=>(h(),f(S,{key:d},[n.type==="text"?(h(),f("div",st,$(n.content),1)):n.type==="tool"&&s.message.tools[n.toolIndex]?(h(),te(Z,{key:1,tool:s.message.tools[n.toolIndex]},null,8,["tool"])):b("",!0)],64))),128)):(h(),f(S,{key:2},[s.message.content?(h(),f("div",nt,$(s.message.content),1)):b("",!0),(h(!0),f(S,null,N(s.message.tools||[],n=>(h(),te(Z,{key:n.id,tool:n},null,8,["tool"]))),128))],64)),(s.message.attachments||[]).length?(h(),f("div",ot,[(h(!0),f(S,null,N(s.message.attachments,n=>(h(),f("a",{key:n.ref||n.name,class:"mi-attachment",href:n.ref,target:"_blank",rel:"noreferrer"},"📎 "+$(n.name||"附件"),9,at))),128))])):b("",!0),(h(!0),f(S,null,N(s.message.choices||[],n=>(h(),f("div",{key:n.id,class:"mi-choice"},[L("div",it,$(n.title||n.prompt),1),L("div",ct,[(h(!0),f(S,null,N(n.buttons||[],d=>(h(),f("button",{key:d.value,class:"mi-choice-btn",disabled:n.status!=="pending",onClick:l=>i("choice",s.message,n,d)},$(d.label),9,lt))),128))]),n.selected_label?(h(),f("div",rt,"已选择："+$(n.selected_label),1)):b("",!0)]))),128)),s.message.status==="error"?(h(),f("div",ut,"（该轮回复失败，可重新发送）")):b("",!0)])],2))}},mt=D(dt,[["__scopeId","data-v-80bda24f"]]),{openBlock:E,createElementBlock:F,createCommentVNode:_t,renderList:ht,Fragment:ft,createBlock:gt,createElementVNode:P,vModelText:vt,withModifiers:yt,withKeys:pt,withDirectives:$t,toDisplayString:kt}=await y("vue"),wt={class:"cp-root"},bt={key:0,class:"cp-hint"},St={key:1,class:"cp-hint"},Ct={class:"cp-input"},xt=["onKeydown"],Bt=["disabled"],{nextTick:Nt,ref:se,watch:Et}=await y("vue"),Dt={__name:"ChatPane",props:{messages:{type:Array,default:()=>[]},streaming:{type:Boolean,default:!1},loading:{type:Boolean,default:!1}},emits:["send","choice"],setup(s,{emit:_}){const i=s,c=_,a=se(""),n=se(null);Et(()=>[i.messages.length,i.messages[i.messages.length-1]?.content],async()=>{await Nt(),n.value&&(n.value.scrollTop=n.value.scrollHeight)});function d(){const u=a.value;a.value="",c("send",u)}function l(u,m,r){c("choice",u,m,r)}return(u,m)=>(E(),F("div",wt,[P("div",{ref_key:"scrollBox",ref:n,class:"cp-scroll"},[s.loading?(E(),F("div",bt,"加载中…")):s.messages.length?_t("",!0):(E(),F("div",St," 向内置 Agent 提问，支持多轮工具调用；左侧可管理多个会话。 ")),(E(!0),F(ft,null,ht(s.messages,r=>(E(),gt(mt,{key:r.id,message:r,onChoice:l},null,8,["message"]))),128))],512),P("div",Ct,[$t(P("textarea",{"onUpdate:modelValue":m[0]||(m[0]=r=>a.value=r),rows:"2",placeholder:"输入消息，Enter 发送 / Shift+Enter 换行",onKeydown:pt(yt(d,["exact","prevent"]),["enter"])},null,40,xt),[[vt,a.value]]),P("button",{class:"cp-send",disabled:s.streaming||!a.value.trim(),onClick:d},kt(s.streaming?"进行中…":"发送"),9,Bt)])]))}},Vt=D(Dt,[["__scopeId","data-v-2c2e4915"]]),{createVNode:ne,createElementVNode:j,toDisplayString:oe,openBlock:q,createElementBlock:W,createCommentVNode:ae}=await y("vue"),Tt={class:"ea-page"},It={class:"ea-side"},At={class:"ea-main"},Mt={class:"ea-header"},Lt={class:"ea-title"},Ft={key:0,class:"ea-notice"},{computed:Pt,onBeforeUnmount:jt,ref:k}=await y("vue"),Ot={__name:"AppPage",props:{api:{type:Object,required:!0},pluginId:{type:String,required:!0},navKey:{type:String,default:"main"}},setup(s){const _=s,i=ke(_.api,_.pluginId),c=k([]),a=k({}),n=k(""),d=k(""),l=k([]),u=k(!1),m=k(!1),r=k("");let w=null;function V(){return typeof crypto<"u"&&crypto.randomUUID?crypto.randomUUID():`seed-${Date.now()}-${Math.random().toString(16).slice(2)}`}function O(){I(),n.value=V(),d.value="",l.value=[],r.value=""}async function T(){try{const e=await i.listSessions(1,50);c.value=Array.isArray(e)?e:[],ie()}catch(e){r.value=`会话列表加载失败：${e.message}`}}async function ie(){const e=c.value.map(t=>t.session_id).filter(Boolean);if(!e.length){a.value={};return}try{const t=await i.sessionsBusy(e);a.value=t&&t.busy||{}}catch{a.value={}}}async function ce(e){I(),r.value="",m.value=!0;try{const t=await i.getSession(e.session_id);d.value=t&&t.session_id||e.session_id,n.value=t&&t.client_session_id||e.client_session_id||e.session_id,l.value=Array.isArray(t&&t.messages)?t.messages:[]}catch(t){r.value=`会话加载失败：${t.message}`}finally{m.value=!1}}function le(e){return{id:`local-${Date.now()}`,role:"user",content:e,createdAt:Date.now(),status:"done",tools:[],segments:[{type:"text",content:e}],attachments:[],choices:[]}}function H(){return{id:`local-${Date.now()}-a`,role:"assistant",content:"",createdAt:Date.now(),status:"streaming",tools:[],segments:[],attachments:[],choices:[],thinking:!1}}function J(e,t){if(!t)return;e.content=(e.content||"")+t;const o=e.segments||(e.segments=[]);o.length&&o[o.length-1].type==="text"?o[o.length-1].content=(o[o.length-1].content||"")+t:o.push({type:"text",content:t})}function re(e,t){const o=t.id||t.tool_id,v=t.status||"running",g=e.tools||(e.tools=[]),A=e.segments||(e.segments=[]);if(o){const C=g.findIndex(U=>U.id===o);if(v==="running"){if(C<0){const U=g.length;g.push({id:o,tool_name:t.tool_name||"",message:String(t.message||"").trim(),status:"running"}),A.push({type:"tool",toolIndex:U})}return}C>=0&&(g[C].status=v);return}g.forEach(C=>{C.status==="running"&&(C.status="done")});const pe=g.length;g.push({id:`tool-${Date.now()}`,message:String(t.message||"").trim(),status:"running"}),A.push({type:"tool",toolIndex:pe})}function ue(e,t){switch(t.type){case"delta":J(e,t.content||"");break;case"tool":re(e,t);break;case"attachment":t.attachment&&e.attachments.push(t.attachment);break;case"choice":t.choice&&e.choices.push({...t.choice,status:"pending"});break;case"message_update":{const o=t.target_message||{};o.id&&(e.id=o.id),e.content=o.content||"",e.attachments=o.attachments||[],e.choices=o.choices||[],e.tools=o.tools||[],e.segments=Array.isArray(o.segments)?o.segments:[...e.tools.map((v,g)=>({type:"tool",toolIndex:g})),...e.content?[{type:"text",content:e.content}]:[]],e.status=o.status||"done";break}case"thinking":e.thinking=String(t.status||"")==="running",e.thinking?e.thinking_started_at=t.started_at:e.thinking_elapsed_ms=t.elapsed_ms||e.thinking_elapsed_ms||0;break;case"error":e.status="error",e.content||J(e,t.message||"智能助手响应失败"),e.tools.forEach(o=>{o.status==="running"&&(o.status="done")});break;case"done":e.thinking=!1,e.status==="streaming"&&(e.status="done");break}}function de(){return l.value.map(e=>({id:e.id,role:e.role,content:e.content||"",createdAt:e.createdAt,status:e.status==="streaming"?"done":e.status||"done",tools:(e.tools||[]).map(t=>({id:t.id,tool_name:t.tool_name||"",message:t.message||"",status:t.status||"done"})),segments:e.segments||[],attachments:e.attachments||[],choices:e.choices||[],choice_selection:e.choice_selection||void 0}))}async function me(e={}){if(!(!d.value&&!n.value))try{const t=await i.saveDisplay(d.value||n.value,{messages:de(),...e});t&&t.session_id&&(d.value=t.session_id)}catch{}}async function _e(e){const t=String(e||"").trim();if(!t||u.value)return;r.value="",n.value||O();const o=le(t),v=H();l.value.push(o,v);const g=l.value.filter(A=>A.role==="user").length===1;await G({text:t,session_id:n.value,title:g?t.slice(0,30):void 0})}async function G(e){u.value=!0,w=new AbortController;const t=l.value[l.value.length-1];try{const o=await i.issueTicket(),v=o&&o.ticket;if(!v)throw new Error("票据签发失败");await be({url:`/api/v1/plugin/${_.pluginId}/stream?ticket=${encodeURIComponent(v)}`,payload:e,signal:w.signal,onEvent:g=>{if(g.type==="start"&&g.session_id){d.value=g.session_id;return}ue(t,g)}}),t.status==="streaming"&&(t.status="done")}catch(o){o.name!=="AbortError"&&(t.status="error",r.value=`对话中断：${o.message}`)}finally{u.value=!1,w=null,await me(e.title?{title:e.title}:{}),T()}}async function he(e,t,o){if(u.value)return;e.choice_selection={choice_id:t.id,value:o.value,label:o.label},t.status="done",t.selected_label=o.label,t.selected_value=o.value;const v=H();l.value.push(v),await G({text:"",session_id:n.value,choice_selection:e.choice_selection,original_message_id:e.id})}function I(){w&&w.abort()}async function fe(){I();try{await i.stopSession(d.value||n.value)}catch(e){r.value=`停止失败：${e.message}`}}async function ge(e,t){try{const o=await i.getSession(e.session_id);await i.saveDisplay(e.session_id,{messages:o&&o.messages||[],title:t}),T()}catch(o){r.value=`重命名失败：${o.message}`}}async function ve(e){try{await i.deleteSession(e.session_id),d.value===e.session_id&&O(),T()}catch(t){r.value=`删除失败：${t.message}`}}const ye=Pt(()=>{const e=c.value.find(t=>t.session_id===d.value);return e&&e.title||"新会话"});return T(),jt(I),(e,t)=>(q(),W("div",Tt,[j("aside",It,[ne(ze,{sessions:c.value,"active-id":d.value,"busy-map":a.value,onNew:O,onSelect:ce,onRename:ge,onRemove:ve},null,8,["sessions","active-id","busy-map"])]),j("section",At,[j("header",Mt,[j("div",Lt,oe(ye.value),1),u.value?(q(),W("button",{key:0,class:"ea-btn ea-btn-danger",onClick:fe},"停止")):ae("",!0)]),r.value?(q(),W("div",Ft,oe(r.value),1)):ae("",!0),ne(Vt,{messages:l.value,streaming:u.value,loading:m.value,onSend:_e,onChoice:he},null,8,["messages","streaming","loading"])])]))}},Rt=D(Ot,[["__scopeId","data-v-a2c42417"]]);export{Rt as default};
+// 插件桥接 API 封装：统一走 plugin/{pluginId}/* 路径（宿主注入的 api 对象自动携带鉴权）。
+
+function unwrap(res) {
+  if (res && typeof res === 'object' && 'success' in res) {
+    if (!res.success) {
+      throw new Error(res.message || '请求失败')
+    }
+    return res.data
+  }
+  return res
+}
+
+function useAgentApi(api, pluginId) {
+  const base = `plugin/${pluginId}`;
+
+  const call = (method, path, body) => {
+    const fn = api && api[method];
+    if (typeof fn !== 'function') {
+      return Promise.reject(new Error(`注入的 api 对象不支持 ${method} 方法`))
+    }
+    return Promise.resolve(fn.call(api, path, body)).then(unwrap)
+  };
+
+  return {
+    /** 签发一次性 SSE 票据 */
+    issueTicket: () => call('post', `${base}/sse_ticket`, {}),
+    /** 历史会话列表 */
+    listSessions: (page = 1, count = 50) =>
+      call('get', `${base}/sessions?page=${page}&count=${count}`),
+    /** 会话详情（含展示消息与 is_processing） */
+    getSession: (sessionId) => call('get', `${base}/sessions/${sessionId}`),
+    /** 保存展示消息快照（可携带标题） */
+    saveDisplay: (sessionId, body) => call('put', `${base}/sessions/${sessionId}/display`, body),
+    /** 删除会话 */
+    deleteSession: (sessionId) => call('delete', `${base}/sessions/${sessionId}`),
+    /** 停止会话当前任务 */
+    stopSession: (sessionId) => call('post', `${base}/sessions/${sessionId}/stop`, {}),
+    /** 批量查询会话运行态 */
+    sessionsBusy: (sessionIds) => call('post', `${base}/sessions_busy`, { session_ids: sessionIds }),
+  }
+}
+
+// fetch + ReadableStream 的 SSE 消费器（EventSource 不支持 POST 与自定义头）。
+// 帧格式与内置 Agent 一致：`data: {json}` 为主，`event: <name>` 为具名事件，
+// `: heartbeat` 注释行为心跳。
+
+function parseFrame(raw) {
+  let eventName = '';
+  const dataLines = [];
+  for (const line of raw.split('\n')) {
+    if (line.startsWith(':')) continue
+    if (line.startsWith('event:')) eventName = line.slice(6).trim();
+    else if (line.startsWith('data:')) dataLines.push(line.slice(5).trim());
+  }
+  if (!dataLines.length) return null
+  try {
+    const data = JSON.parse(dataLines.join('\n'));
+    return eventName ? { ...data, __event: eventName } : data
+  } catch {
+    return null
+  }
+}
+
+/**
+ * 消费流式对话。
+ * @param {object} options 入参
+ * @param {string} options.url 流式端点（含一次性票据）
+ * @param {object} options.payload 对话请求体
+ * @param {(event: object) => void} options.onEvent 事件回调
+ * @param {AbortSignal} [options.signal] 取消信号
+ */
+async function runAgentStream({ url, payload, onEvent, signal }) {
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+    signal,
+  });
+  if (!resp.ok || !resp.body) {
+    throw new Error(`流式请求失败（HTTP ${resp.status}）`)
+  }
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder('utf-8');
+  let buffer = '';
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break
+    buffer += decoder.decode(value, { stream: true });
+    let index;
+    while ((index = buffer.indexOf('\n\n')) >= 0) {
+      const frame = buffer.slice(0, index);
+      buffer = buffer.slice(index + 2);
+      const event = parseFrame(frame);
+      if (event) onEvent(event);
+    }
+  }
+}
+
+const {createElementVNode:_createElementVNode$4,openBlock:_openBlock$4,createElementBlock:_createElementBlock$4,createCommentVNode:_createCommentVNode$4,renderList:_renderList$2,Fragment:_Fragment$2,toDisplayString:_toDisplayString$4,createTextVNode:_createTextVNode$1,withModifiers:_withModifiers$1,normalizeClass:_normalizeClass$2} = await importShared('vue');
+
+
+const _hoisted_1$4 = { class: "sl-root" };
+const _hoisted_2$4 = {
+  key: 0,
+  class: "sl-empty"
+};
+const _hoisted_3$4 = ["onClick"];
+const _hoisted_4$4 = { class: "sl-item-main" };
+const _hoisted_5$3 = { class: "sl-item-title" };
+const _hoisted_6$3 = {
+  key: 0,
+  class: "sl-badge",
+  title: "运行中"
+};
+const _hoisted_7$1 = { class: "sl-item-preview" };
+const _hoisted_8$1 = { class: "sl-item-time" };
+const _hoisted_9$1 = ["onClick"];
+const _hoisted_10$1 = {
+  key: 0,
+  class: "sl-menu"
+};
+const _hoisted_11$1 = ["onClick"];
+const _hoisted_12$1 = ["onClick"];
+
+const {ref: ref$2} = await importShared('vue');
+
+
+
+const _sfc_main$4 = {
+  __name: 'SessionList',
+  props: {
+  sessions: { type: Array, default: () => [] },
+  activeId: { type: String, default: '' },
+  busyMap: { type: Object, default: () => ({}) },
+},
+  emits: ['new', 'select', 'rename', 'remove'],
+  setup(__props, { emit: __emit }) {
+
+const emit = __emit;
+
+const menuFor = ref$2('');
+
+function formatTime(value) {
+  if (!value) return ''
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value)
+  const now = Date.now();
+  const diff = now - date.getTime();
+  if (diff < 60 * 1000) return '刚刚'
+  if (diff < 60 * 60 * 1000) return `${Math.floor(diff / 60000)} 分钟前`
+  if (diff < 24 * 60 * 60 * 1000) return `${Math.floor(diff / 3600000)} 小时前`
+  return date.toLocaleDateString()
+}
+
+function onRename(session) {
+  menuFor.value = '';
+  const title = window.prompt('会话标题', session.title || '');
+  if (title && title.trim()) emit('rename', session, title.trim());
+}
+
+function onRemove(session) {
+  menuFor.value = '';
+  if (window.confirm(`删除会话「${session.title || '未命名'}」？该操作不可恢复。`)) {
+    emit('remove', session);
+  }
+}
+
+return (_ctx, _cache) => {
+  return (_openBlock$4(), _createElementBlock$4("div", _hoisted_1$4, [
+    _createElementVNode$4("button", {
+      class: "sl-new",
+      onClick: _cache[0] || (_cache[0] = $event => (emit('new')))
+    }, "＋ 新会话"),
+    (!__props.sessions.length)
+      ? (_openBlock$4(), _createElementBlock$4("div", _hoisted_2$4, "暂无历史会话"))
+      : _createCommentVNode$4("", true),
+    (_openBlock$4(true), _createElementBlock$4(_Fragment$2, null, _renderList$2(__props.sessions, (session) => {
+      return (_openBlock$4(), _createElementBlock$4("div", {
+        key: session.session_id,
+        class: _normalizeClass$2(["sl-item", { 'sl-item-on': session.session_id === __props.activeId }]),
+        onClick: $event => (emit('select', session))
+      }, [
+        _createElementVNode$4("div", _hoisted_4$4, [
+          _createElementVNode$4("div", _hoisted_5$3, [
+            (__props.busyMap[session.session_id])
+              ? (_openBlock$4(), _createElementBlock$4("span", _hoisted_6$3, "●"))
+              : _createCommentVNode$4("", true),
+            _createTextVNode$1(" " + _toDisplayString$4(session.title || '未命名会话'), 1)
+          ]),
+          _createElementVNode$4("div", _hoisted_7$1, _toDisplayString$4(session.preview || ''), 1),
+          _createElementVNode$4("div", _hoisted_8$1, _toDisplayString$4(formatTime(session.updated_at)), 1)
+        ]),
+        _createElementVNode$4("div", {
+          class: "sl-item-menu",
+          onClick: _withModifiers$1($event => (menuFor.value = menuFor.value === session.session_id ? '' : session.session_id), ["stop"])
+        }, [
+          _cache[1] || (_cache[1] = _createTextVNode$1(" ⋯ ", -1)),
+          (menuFor.value === session.session_id)
+            ? (_openBlock$4(), _createElementBlock$4("div", _hoisted_10$1, [
+                _createElementVNode$4("div", {
+                  class: "sl-menu-item",
+                  onClick: $event => (onRename(session))
+                }, "重命名", 8, _hoisted_11$1),
+                _createElementVNode$4("div", {
+                  class: "sl-menu-item sl-menu-danger",
+                  onClick: $event => (onRemove(session))
+                }, "删除", 8, _hoisted_12$1)
+              ]))
+            : _createCommentVNode$4("", true)
+        ], 8, _hoisted_9$1)
+      ], 10, _hoisted_3$4))
+    }), 128))
+  ]))
+}
+}
+
+};
+const SessionList = /*#__PURE__*/_export_sfc(_sfc_main$4, [['__scopeId',"data-v-0eb50901"]]);
+
+const {toDisplayString:_toDisplayString$3,createElementVNode:_createElementVNode$3,openBlock:_openBlock$3,createElementBlock:_createElementBlock$3,createCommentVNode:_createCommentVNode$3,normalizeClass:_normalizeClass$1} = await importShared('vue');
+
+
+const _hoisted_1$3 = { class: "tc-status" };
+const _hoisted_2$3 = { class: "tc-name" };
+const _hoisted_3$3 = {
+  key: 0,
+  class: "tc-msg"
+};
+const _hoisted_4$3 = { class: "tc-state" };
+
+const {computed: computed$1} = await importShared('vue');
+
+
+
+const _sfc_main$3 = {
+  __name: 'ToolCard',
+  props: {
+  tool: { type: Object, required: true },
+},
+  setup(__props) {
+
+// 工具调用卡片：名称、提示与运行状态。
+const props = __props;
+
+const statusText = computed$1(
+  () => ({ running: '执行中', done: '完成', error: '失败' })[props.tool.status] || props.tool.status,
+);
+
+return (_ctx, _cache) => {
+  return (_openBlock$3(), _createElementBlock$3("div", {
+    class: _normalizeClass$1(["tc-root", `tc-${__props.tool.status || 'done'}`])
+  }, [
+    _createElementVNode$3("span", _hoisted_1$3, _toDisplayString$3(__props.tool.status === 'running' ? '⟳' : __props.tool.status === 'error' ? '✕' : '✓'), 1),
+    _createElementVNode$3("span", _hoisted_2$3, _toDisplayString$3(__props.tool.tool_name || '工具调用'), 1),
+    (__props.tool.message)
+      ? (_openBlock$3(), _createElementBlock$3("span", _hoisted_3$3, _toDisplayString$3(__props.tool.message), 1))
+      : _createCommentVNode$3("", true),
+    _createElementVNode$3("span", _hoisted_4$3, _toDisplayString$3(statusText.value), 1)
+  ], 2))
+}
+}
+
+};
+const ToolCard = /*#__PURE__*/_export_sfc(_sfc_main$3, [['__scopeId',"data-v-cd1eb36f"]]);
+
+const {toDisplayString:_toDisplayString$2,createElementVNode:_createElementVNode$2,openBlock:_openBlock$2,createElementBlock:_createElementBlock$2,createCommentVNode:_createCommentVNode$2,createTextVNode:_createTextVNode,renderList:_renderList$1,Fragment:_Fragment$1,createBlock:_createBlock$1,normalizeClass:_normalizeClass} = await importShared('vue');
+
+
+const _hoisted_1$2 = { class: "mi-role" };
+const _hoisted_2$2 = { class: "mi-body" };
+const _hoisted_3$2 = {
+  key: 0,
+  class: "mi-thinking"
+};
+const _hoisted_4$2 = { key: 0 };
+const _hoisted_5$2 = {
+  key: 0,
+  class: "mi-text"
+};
+const _hoisted_6$2 = {
+  key: 0,
+  class: "mi-text"
+};
+const _hoisted_7 = {
+  key: 3,
+  class: "mi-attachments"
+};
+const _hoisted_8 = ["href"];
+const _hoisted_9 = { class: "mi-choice-title" };
+const _hoisted_10 = { class: "mi-choice-buttons" };
+const _hoisted_11 = ["disabled", "onClick"];
+const _hoisted_12 = {
+  key: 0,
+  class: "mi-choice-selected"
+};
+const _hoisted_13 = {
+  key: 4,
+  class: "mi-error"
+};
+
+
+const _sfc_main$2 = {
+  __name: 'MessageItem',
+  props: {
+  message: { type: Object, required: true },
+},
+  emits: ['choice'],
+  setup(__props, { emit: __emit }) {
+
+// 单条展示消息：按 segments 顺序渲染文本与工具卡片，含附件与选择卡。
+
+
+const emit = __emit;
+
+return (_ctx, _cache) => {
+  return (_openBlock$2(), _createElementBlock$2("div", {
+    class: _normalizeClass(["mi-root", `mi-${__props.message.role}`])
+  }, [
+    _createElementVNode$2("div", _hoisted_1$2, _toDisplayString$2(__props.message.role === 'user' ? '我' : 'Agent'), 1),
+    _createElementVNode$2("div", _hoisted_2$2, [
+      (__props.message.thinking)
+        ? (_openBlock$2(), _createElementBlock$2("div", _hoisted_3$2, [
+            _cache[0] || (_cache[0] = _createTextVNode(" 思考中", -1)),
+            (__props.message.thinking_elapsed_ms)
+              ? (_openBlock$2(), _createElementBlock$2("span", _hoisted_4$2, "（" + _toDisplayString$2(Math.round(__props.message.thinking_elapsed_ms / 1000)) + "s）", 1))
+              : _createCommentVNode$2("", true),
+            _cache[1] || (_cache[1] = _createTextVNode("… ", -1))
+          ]))
+        : _createCommentVNode$2("", true),
+      ((__props.message.segments || []).length)
+        ? (_openBlock$2(true), _createElementBlock$2(_Fragment$1, { key: 1 }, _renderList$1(__props.message.segments, (segment, index) => {
+            return (_openBlock$2(), _createElementBlock$2(_Fragment$1, { key: index }, [
+              (segment.type === 'text')
+                ? (_openBlock$2(), _createElementBlock$2("div", _hoisted_5$2, _toDisplayString$2(segment.content), 1))
+                : (segment.type === 'tool' && __props.message.tools[segment.toolIndex])
+                  ? (_openBlock$2(), _createBlock$1(ToolCard, {
+                      key: 1,
+                      tool: __props.message.tools[segment.toolIndex]
+                    }, null, 8, ["tool"]))
+                  : _createCommentVNode$2("", true)
+            ], 64))
+          }), 128))
+        : (_openBlock$2(), _createElementBlock$2(_Fragment$1, { key: 2 }, [
+            (__props.message.content)
+              ? (_openBlock$2(), _createElementBlock$2("div", _hoisted_6$2, _toDisplayString$2(__props.message.content), 1))
+              : _createCommentVNode$2("", true),
+            (_openBlock$2(true), _createElementBlock$2(_Fragment$1, null, _renderList$1(__props.message.tools || [], (tool) => {
+              return (_openBlock$2(), _createBlock$1(ToolCard, {
+                key: tool.id,
+                tool: tool
+              }, null, 8, ["tool"]))
+            }), 128))
+          ], 64)),
+      ((__props.message.attachments || []).length)
+        ? (_openBlock$2(), _createElementBlock$2("div", _hoisted_7, [
+            (_openBlock$2(true), _createElementBlock$2(_Fragment$1, null, _renderList$1(__props.message.attachments, (attachment) => {
+              return (_openBlock$2(), _createElementBlock$2("a", {
+                key: attachment.ref || attachment.name,
+                class: "mi-attachment",
+                href: attachment.ref,
+                target: "_blank",
+                rel: "noreferrer"
+              }, "📎 " + _toDisplayString$2(attachment.name || '附件'), 9, _hoisted_8))
+            }), 128))
+          ]))
+        : _createCommentVNode$2("", true),
+      (_openBlock$2(true), _createElementBlock$2(_Fragment$1, null, _renderList$1(__props.message.choices || [], (choice) => {
+        return (_openBlock$2(), _createElementBlock$2("div", {
+          key: choice.id,
+          class: "mi-choice"
+        }, [
+          _createElementVNode$2("div", _hoisted_9, _toDisplayString$2(choice.title || choice.prompt), 1),
+          _createElementVNode$2("div", _hoisted_10, [
+            (_openBlock$2(true), _createElementBlock$2(_Fragment$1, null, _renderList$1(choice.buttons || [], (button) => {
+              return (_openBlock$2(), _createElementBlock$2("button", {
+                key: button.value,
+                class: "mi-choice-btn",
+                disabled: choice.status !== 'pending',
+                onClick: $event => (emit('choice', __props.message, choice, button))
+              }, _toDisplayString$2(button.label), 9, _hoisted_11))
+            }), 128))
+          ]),
+          (choice.selected_label)
+            ? (_openBlock$2(), _createElementBlock$2("div", _hoisted_12, "已选择：" + _toDisplayString$2(choice.selected_label), 1))
+            : _createCommentVNode$2("", true)
+        ]))
+      }), 128)),
+      (__props.message.status === 'error')
+        ? (_openBlock$2(), _createElementBlock$2("div", _hoisted_13, "（该轮回复失败，可重新发送）"))
+        : _createCommentVNode$2("", true)
+    ])
+  ], 2))
+}
+}
+
+};
+const MessageItem = /*#__PURE__*/_export_sfc(_sfc_main$2, [['__scopeId',"data-v-80bda24f"]]);
+
+const {openBlock:_openBlock$1,createElementBlock:_createElementBlock$1,createCommentVNode:_createCommentVNode$1,renderList:_renderList,Fragment:_Fragment,createBlock:_createBlock,createElementVNode:_createElementVNode$1,vModelText:_vModelText,withModifiers:_withModifiers,withKeys:_withKeys,withDirectives:_withDirectives,toDisplayString:_toDisplayString$1} = await importShared('vue');
+
+
+const _hoisted_1$1 = { class: "cp-root" };
+const _hoisted_2$1 = {
+  key: 0,
+  class: "cp-hint"
+};
+const _hoisted_3$1 = {
+  key: 1,
+  class: "cp-hint"
+};
+const _hoisted_4$1 = { class: "cp-input" };
+const _hoisted_5$1 = ["onKeydown"];
+const _hoisted_6$1 = ["disabled"];
+
+const {nextTick,ref: ref$1,watch} = await importShared('vue');
+
+
+const _sfc_main$1 = {
+  __name: 'ChatPane',
+  props: {
+  messages: { type: Array, default: () => [] },
+  streaming: { type: Boolean, default: false },
+  loading: { type: Boolean, default: false },
+},
+  emits: ['send', 'choice'],
+  setup(__props, { emit: __emit }) {
+
+// 对话面板：消息流 + 输入框 + 选择卡回调。
+const props = __props;
+
+const emit = __emit;
+
+const input = ref$1('');
+const scrollBox = ref$1(null);
+
+watch(
+  () => [props.messages.length, props.messages[props.messages.length - 1]?.content],
+  async () => {
+    await nextTick();
+    if (scrollBox.value) scrollBox.value.scrollTop = scrollBox.value.scrollHeight;
+  },
+);
+
+function onSubmit() {
+  const text = input.value;
+  input.value = '';
+  emit('send', text);
+}
+
+function onChoice(message, choice, button) {
+  emit('choice', message, choice, button);
+}
+
+return (_ctx, _cache) => {
+  return (_openBlock$1(), _createElementBlock$1("div", _hoisted_1$1, [
+    _createElementVNode$1("div", {
+      ref_key: "scrollBox",
+      ref: scrollBox,
+      class: "cp-scroll"
+    }, [
+      (__props.loading)
+        ? (_openBlock$1(), _createElementBlock$1("div", _hoisted_2$1, "加载中…"))
+        : (!__props.messages.length)
+          ? (_openBlock$1(), _createElementBlock$1("div", _hoisted_3$1, " 向内置 Agent 提问，支持多轮工具调用；左侧可管理多个会话。 "))
+          : _createCommentVNode$1("", true),
+      (_openBlock$1(true), _createElementBlock$1(_Fragment, null, _renderList(__props.messages, (message) => {
+        return (_openBlock$1(), _createBlock(MessageItem, {
+          key: message.id,
+          message: message,
+          onChoice: onChoice
+        }, null, 8, ["message"]))
+      }), 128))
+    ], 512),
+    _createElementVNode$1("div", _hoisted_4$1, [
+      _withDirectives(_createElementVNode$1("textarea", {
+        "onUpdate:modelValue": _cache[0] || (_cache[0] = $event => ((input).value = $event)),
+        rows: "2",
+        placeholder: "输入消息，Enter 发送 / Shift+Enter 换行",
+        onKeydown: _withKeys(_withModifiers(onSubmit, ["exact","prevent"]), ["enter"])
+      }, null, 40, _hoisted_5$1), [
+        [_vModelText, input.value]
+      ]),
+      _createElementVNode$1("button", {
+        class: "cp-send",
+        disabled: __props.streaming || !input.value.trim(),
+        onClick: onSubmit
+      }, _toDisplayString$1(__props.streaming ? '进行中…' : '发送'), 9, _hoisted_6$1)
+    ])
+  ]))
+}
+}
+
+};
+const ChatPane = /*#__PURE__*/_export_sfc(_sfc_main$1, [['__scopeId',"data-v-2c2e4915"]]);
+
+const {createVNode:_createVNode,createElementVNode:_createElementVNode,toDisplayString:_toDisplayString,openBlock:_openBlock,createElementBlock:_createElementBlock,createCommentVNode:_createCommentVNode} = await importShared('vue');
+
+
+const _hoisted_1 = { class: "ea-page" };
+const _hoisted_2 = { class: "ea-side" };
+const _hoisted_3 = { class: "ea-main" };
+const _hoisted_4 = { class: "ea-header" };
+const _hoisted_5 = { class: "ea-title" };
+const _hoisted_6 = {
+  key: 0,
+  class: "ea-notice"
+};
+
+const {computed,onBeforeUnmount,ref} = await importShared('vue');
+
+
+const _sfc_main = {
+  __name: 'AppPage',
+  props: {
+  api: { type: Object, default: () => ({}) },
+  pluginId: { type: String, default: '' },
+  navKey: { type: String, default: 'main' },
+  sourcePluginId: { type: String, default: '' },
+  nativeSubscribe: { type: Function, default: null },
+},
+  setup(__props) {
+
+// 「AI助手增强」侧边栏全页入口：会话列表 + 流式对话。
+const props = __props;
+
+const api = useAgentApi(props.api, props.pluginId);
+
+const sessions = ref([]);
+const busyMap = ref({});
+const activeSeed = ref('');
+const activeServerId = ref('');
+const messages = ref([]);
+const streaming = ref(false);
+const loading = ref(false);
+const notice = ref('');
+
+let abortController = null;
+
+function newSeed() {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID()
+  return `seed-${Date.now()}-${Math.random().toString(16).slice(2)}`
+}
+
+function newSession() {
+  cancelStream();
+  activeSeed.value = newSeed();
+  activeServerId.value = '';
+  messages.value = [];
+  notice.value = '';
+}
+
+async function loadSessions() {
+  try {
+    const data = await api.listSessions(1, 50);
+    sessions.value = Array.isArray(data) ? data : [];
+    refreshBusy();
+  } catch (error) {
+    notice.value = `会话列表加载失败：${error.message}`;
+  }
+}
+
+async function refreshBusy() {
+  const ids = sessions.value
+    .map((item) => item.session_id)
+    .filter(Boolean);
+  if (!ids.length) {
+    busyMap.value = {};
+    return
+  }
+  try {
+    const data = await api.sessionsBusy(ids);
+    busyMap.value = (data && data.busy) || {};
+  } catch {
+    busyMap.value = {};
+  }
+}
+
+async function selectSession(session) {
+  cancelStream();
+  notice.value = '';
+  loading.value = true;
+  try {
+    const data = await api.getSession(session.session_id);
+    activeServerId.value = (data && data.session_id) || session.session_id;
+    activeSeed.value = (data && data.client_session_id) || session.client_session_id || session.session_id;
+    messages.value = Array.isArray(data && data.messages) ? data.messages : [];
+  } catch (error) {
+    notice.value = `会话加载失败：${error.message}`;
+  } finally {
+    loading.value = false;
+  }
+}
+
+function buildUserMessage(text) {
+  return {
+    id: `local-${Date.now()}`,
+    role: 'user',
+    content: text,
+    createdAt: Date.now(),
+    status: 'done',
+    tools: [],
+    segments: [{ type: 'text', content: text }],
+    attachments: [],
+    choices: [],
+  }
+}
+
+function buildAssistantMessage() {
+  return {
+    id: `local-${Date.now()}-a`,
+    role: 'assistant',
+    content: '',
+    createdAt: Date.now(),
+    status: 'streaming',
+    tools: [],
+    segments: [],
+    attachments: [],
+    choices: [],
+    thinking: false,
+  }
+}
+
+function appendText(message, content) {
+  if (!content) return
+  message.content = (message.content || '') + content;
+  const segments = message.segments || (message.segments = []);
+  if (segments.length && segments[segments.length - 1].type === 'text') {
+    segments[segments.length - 1].content = (segments[segments.length - 1].content || '') + content;
+  } else {
+    segments.push({ type: 'text', content });
+  }
+}
+
+function applyToolEvent(message, event) {
+  const toolId = event.id || event.tool_id;
+  const status = event.status || 'running';
+  const tools = message.tools || (message.tools = []);
+  const segments = message.segments || (message.segments = []);
+  if (toolId) {
+    const index = tools.findIndex((tool) => tool.id === toolId);
+    if (status === 'running') {
+      if (index < 0) {
+        const toolIndex = tools.length;
+        tools.push({
+          id: toolId,
+          tool_name: event.tool_name || '',
+          message: String(event.message || '').trim(),
+          status: 'running',
+        });
+        segments.push({ type: 'tool', toolIndex });
+      }
+      return
+    }
+    if (index >= 0) tools[index].status = status;
+    return
+  }
+  tools.forEach((tool) => {
+    if (tool.status === 'running') tool.status = 'done';
+  });
+  const toolIndex = tools.length;
+  tools.push({
+    id: `tool-${Date.now()}`,
+    message: String(event.message || '').trim(),
+    status: 'running',
+  });
+  segments.push({ type: 'tool', toolIndex });
+}
+
+// 与内置 Agent 服务端 apply_web_agent_display_event 保持同一套归约语义。
+function applyDisplayEvent(message, event) {
+  switch (event.type) {
+    case 'delta':
+      appendText(message, event.content || '');
+      break
+    case 'tool':
+      applyToolEvent(message, event);
+      break
+    case 'attachment':
+      if (event.attachment) message.attachments.push(event.attachment);
+      break
+    case 'choice':
+      if (event.choice) message.choices.push({ ...event.choice, status: 'pending' });
+      break
+    case 'message_update': {
+      const target = event.target_message || {};
+      if (target.id) message.id = target.id;
+      message.content = target.content || '';
+      message.attachments = target.attachments || [];
+      message.choices = target.choices || [];
+      message.tools = target.tools || [];
+      message.segments = Array.isArray(target.segments)
+        ? target.segments
+        : [
+            ...message.tools.map((_, index) => ({ type: 'tool', toolIndex: index })),
+            ...(message.content ? [{ type: 'text', content: message.content }] : []),
+          ];
+      message.status = target.status || 'done';
+      break
+    }
+    case 'thinking':
+      message.thinking = String(event.status || '') === 'running';
+      if (message.thinking) {
+        message.thinking_started_at = event.started_at;
+      } else {
+        message.thinking_elapsed_ms = event.elapsed_ms || message.thinking_elapsed_ms || 0;
+      }
+      break
+    case 'error':
+      message.status = 'error';
+      if (!message.content) appendText(message, event.message || '智能助手响应失败');
+      message.tools.forEach((tool) => {
+        if (tool.status === 'running') tool.status = 'done';
+      });
+      break
+    case 'done':
+      message.thinking = false;
+      if (message.status === 'streaming') message.status = 'done';
+      break
+  }
+}
+
+function savePayloadMessages() {
+  return messages.value.map((message) => ({
+    id: message.id,
+    role: message.role,
+    content: message.content || '',
+    createdAt: message.createdAt,
+    status: message.status === 'streaming' ? 'done' : message.status || 'done',
+    tools: (message.tools || []).map((tool) => ({
+      id: tool.id,
+      tool_name: tool.tool_name || '',
+      message: tool.message || '',
+      status: tool.status || 'done',
+    })),
+    segments: message.segments || [],
+    attachments: message.attachments || [],
+    choices: message.choices || [],
+    choice_selection: message.choice_selection || undefined,
+  }))
+}
+
+async function persistDisplay(extra = {}) {
+  if (!activeServerId.value && !activeSeed.value) return
+  try {
+    const data = await api.saveDisplay(activeServerId.value || activeSeed.value, {
+      messages: savePayloadMessages(),
+      ...extra,
+    });
+    if (data && data.session_id) activeServerId.value = data.session_id;
+  } catch {
+    // 展示快照保存失败不阻断对话；下次完成时重试
+  }
+}
+
+async function send(text) {
+  const content = String(text || '').trim();
+  if (!content || streaming.value) return
+  notice.value = '';
+  if (!activeSeed.value) newSession();
+
+  const userMessage = buildUserMessage(content);
+  const assistantMessage = buildAssistantMessage();
+  messages.value.push(userMessage, assistantMessage);
+
+  const isFirstTurn = messages.value.filter((item) => item.role === 'user').length === 1;
+  await startStream({
+    text: content,
+    session_id: activeSeed.value,
+    title: isFirstTurn ? content.slice(0, 30) : undefined,
+  });
+}
+
+async function startStream(payload) {
+  streaming.value = true;
+  abortController = new AbortController();
+  const assistantMessage = messages.value[messages.value.length - 1];
+  try {
+    const ticketData = await api.issueTicket();
+    const ticket = ticketData && ticketData.ticket;
+    if (!ticket) throw new Error('票据签发失败')
+    await runAgentStream({
+      url: `/api/v1/plugin/${props.pluginId}/stream?ticket=${encodeURIComponent(ticket)}`,
+      payload,
+      signal: abortController.signal,
+      onEvent: (event) => {
+        if (event.type === 'start' && event.session_id) {
+          activeServerId.value = event.session_id;
+          return
+        }
+        applyDisplayEvent(assistantMessage, event);
+      },
+    });
+    if (assistantMessage.status === 'streaming') assistantMessage.status = 'done';
+  } catch (error) {
+    if (error.name !== 'AbortError') {
+      assistantMessage.status = 'error';
+      notice.value = `对话中断：${error.message}`;
+    }
+  } finally {
+    streaming.value = false;
+    abortController = null;
+    await persistDisplay(payload.title ? { title: payload.title } : {});
+    loadSessions();
+  }
+}
+
+async function sendChoice(message, choice, button) {
+  if (streaming.value) return
+  message.choice_selection = {
+    choice_id: choice.id,
+    value: button.value,
+    label: button.label,
+  };
+  choice.status = 'done';
+  choice.selected_label = button.label;
+  choice.selected_value = button.value;
+  const assistantMessage = buildAssistantMessage();
+  messages.value.push(assistantMessage);
+  await startStream({
+    text: '',
+    session_id: activeSeed.value,
+    choice_selection: message.choice_selection,
+    original_message_id: message.id,
+  });
+}
+
+function cancelStream() {
+  if (abortController) abortController.abort();
+}
+
+async function stopCurrent() {
+  cancelStream();
+  try {
+    await api.stopSession(activeServerId.value || activeSeed.value);
+  } catch (error) {
+    notice.value = `停止失败：${error.message}`;
+  }
+}
+
+async function renameSession(session, title) {
+  try {
+    const detail = await api.getSession(session.session_id);
+    await api.saveDisplay(session.session_id, {
+      messages: (detail && detail.messages) || [],
+      title,
+    });
+    loadSessions();
+  } catch (error) {
+    notice.value = `重命名失败：${error.message}`;
+  }
+}
+
+async function removeSession(session) {
+  try {
+    await api.deleteSession(session.session_id);
+    if (activeServerId.value === session.session_id) newSession();
+    loadSessions();
+  } catch (error) {
+    notice.value = `删除失败：${error.message}`;
+  }
+}
+
+const activeTitle = computed(() => {
+  const found = sessions.value.find((item) => item.session_id === activeServerId.value);
+  return (found && found.title) || '新会话'
+});
+
+loadSessions();
+onBeforeUnmount(cancelStream);
+
+return (_ctx, _cache) => {
+  return (_openBlock(), _createElementBlock("div", _hoisted_1, [
+    _createElementVNode("aside", _hoisted_2, [
+      _createVNode(SessionList, {
+        sessions: sessions.value,
+        "active-id": activeServerId.value,
+        "busy-map": busyMap.value,
+        onNew: newSession,
+        onSelect: selectSession,
+        onRename: renameSession,
+        onRemove: removeSession
+      }, null, 8, ["sessions", "active-id", "busy-map"])
+    ]),
+    _createElementVNode("section", _hoisted_3, [
+      _createElementVNode("header", _hoisted_4, [
+        _createElementVNode("div", _hoisted_5, _toDisplayString(activeTitle.value), 1),
+        (streaming.value)
+          ? (_openBlock(), _createElementBlock("button", {
+              key: 0,
+              class: "ea-btn ea-btn-danger",
+              onClick: stopCurrent
+            }, "停止"))
+          : _createCommentVNode("", true)
+      ]),
+      (notice.value)
+        ? (_openBlock(), _createElementBlock("div", _hoisted_6, _toDisplayString(notice.value), 1))
+        : _createCommentVNode("", true),
+      _createVNode(ChatPane, {
+        messages: messages.value,
+        streaming: streaming.value,
+        loading: loading.value,
+        onSend: send,
+        onChoice: sendChoice
+      }, null, 8, ["messages", "streaming", "loading"])
+    ])
+  ]))
+}
+}
+
+};
+const AppPage = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-cdfb3fd3"]]);
+
+export { AppPage as default };

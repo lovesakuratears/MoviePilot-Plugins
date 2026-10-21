@@ -19,9 +19,9 @@ export default defineConfig({
         './AppPage': './src/components/AppPage.vue',
       },
       shared: {
-        // 官方联邦指南强制：vue/vuetify 均 singleton，复用宿主实例，
-        // 避免双 Vue 实例导致远程组件静默渲染空白。
-        vue: { requiredVersion: false, generate: false, singleton: true },
+        // 严格对齐官方指南/示例与宿主 vite.config（shared: ['vue','vuetify']）：
+        // vue 不加 singleton，vuetify/vuetify/styles 为 singleton。
+        vue: { requiredVersion: false, generate: false },
         vuetify: { requiredVersion: false, generate: false, singleton: true },
         'vuetify/styles': { requiredVersion: false, generate: false, singleton: true },
       },
@@ -31,6 +31,11 @@ export default defineConfig({
   css: {
     postcss: {
       plugins: [{
+        postcssPlugin: 'internal:charset-removal',
+        AtRule(atRule) {
+          if (atRule.name === 'charset') atRule.remove()
+        },
+      }, {
         postcssPlugin: 'vuetify-filter',
         Root(root) {
           // 官方强制：移除 node_modules 中 vuetify/@mdi 的全局 CSS，避免污染主程序
@@ -52,6 +57,7 @@ export default defineConfig({
   },
   build: {
     target: 'esnext',
+    minify: false,
     cssCodeSplit: true,
     // 产物落到插件根目录 dist/，与 get_render_mode() 的 ("vue", "dist/assets") 一致
     outDir: '../dist',

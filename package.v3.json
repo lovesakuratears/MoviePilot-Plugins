@@ -52,7 +52,7 @@
     "name": "AI助手增强",
     "description": "为内置 Agent 提供侧边栏全页入口：流式对话、工具卡片与多会话管理。",
     "labels": "智能助手,Agent",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "icon": "Enhancedagent_A.png",
     "author": "lovesakuratears",
     "author_url": "https://github.com/lovesakuratears/MoviePilot-Plugins",
@@ -60,7 +60,8 @@
     "level": 1,
     "release": true,
     "history": {
-      "v1.0.1": "修复设置页空白：get_form 补 vuetify 兜底表单（启用开关），旧版前端/远程组件加载失败时不再无内容；联邦构建对齐官方指南（vue shared singleton、PostCSS 剔除 vuetify 全局 CSS）；Config 补空值防护与 switch 事件",
+      "v1.0.2": "设置界面修复：vue shared 去 singleton（对齐宿主 shared:['vue','vuetify'] 契约，修复保存不生效/界面异常）；Config 重写为 Vuetify 组件树（官方示例风格，自带标题与关闭钮）；AppPage props 宽松化、布局贴合宿主容器；README 注明侧栏缓存需刷新页面",
+      "v1.0.1": "修复设置页空白：get_form 补 vuetify 兜底表单（启用开关），旧版前端/远程组件加载失败时不再无内容；PostCSS 剔除 vuetify 全局 CSS；Config 补空值防护与 switch 事件",
       "v1.0.0": "首个版本：侧边栏全页入口、SSE 流式对话（一次性票据鉴权）、工具调用卡片、多会话管理（新建/切换/重命名/删除/停止）。"
     }
   }

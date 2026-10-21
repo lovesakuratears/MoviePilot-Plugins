@@ -223,7 +223,7 @@ class TestPluginMeta(unittest.TestCase):
 
     def test_metadata(self):
         self.assertEqual(EnhancedAgent.plugin_name, "AI助手增强")
-        self.assertEqual(EnhancedAgent.plugin_version, "1.0.1")
+        self.assertEqual(EnhancedAgent.plugin_version, "1.0.2")
         self.assertEqual(EnhancedAgent.plugin_author, "lovesakuratears")
         self.assertEqual(EnhancedAgent.plugin_config_prefix, "enhancedagent_")
         self.assertEqual(EnhancedAgent.auth_level, 1)
