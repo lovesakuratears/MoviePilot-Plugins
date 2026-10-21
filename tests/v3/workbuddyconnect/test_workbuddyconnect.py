@@ -203,6 +203,77 @@ class TestChatBodyPreparation(unittest.TestCase):
             json.dumps({"messages": [], "prompt_cache_key": "mine"}), "uid"))
         self.assertEqual(kept["prompt_cache_key"], "mine")
 
+    def test_system_channel_bypass_exact(self):
+        """system content 以拦截前缀开头时自动加绕过前缀。"""
+        blocked = "You are an AI agent powered by DeepSeek Harness."
+        out = json.loads(protocol.prepare_chat_body(json.dumps({
+            "messages": [{"role": "system", "content": blocked}],
+        })))
+        content = out["messages"][0]["content"]
+        self.assertNotEqual(content[:len(blocked)].lower(), blocked.lower()[:len(blocked)])
+        self.assertIn(blocked, content)
+
+    def test_system_channel_bypass_case_insensitive(self):
+        """大小写混合同样命中拦截。"""
+        for variant in (
+            "you are an ai agent powered by deepseek harness",
+            "YOU ARE AN AI AGENT POWERED BY DEEPSEEK HARNESS",
+            "You Are An AI Agent Powered By DeepSeek Harness",
+        ):
+            out = json.loads(protocol.prepare_chat_body(json.dumps({
+                "messages": [{"role": "system", "content": variant}],
+            })))
+            self.assertIn("​", out["messages"][0]["content"], variant)
+
+    def test_system_channel_bypass_leading_whitespace(self):
+        """前导空白也命中拦截。"""
+        out = json.loads(protocol.prepare_chat_body(json.dumps({
+            "messages": [{"role": "system", "content": "  You are an AI agent powered by DeepSeek Harness"}],
+        })))
+        self.assertIn("​", out["messages"][0]["content"])
+
+    def test_system_normal_prompt_untouched(self):
+        """正常 system prompt 不受影响。"""
+        for prompt in (
+            "You are a helpful assistant.",
+            "You are an AI coding agent powered by DeepSeek Harness",
+            "Some other prompt",
+        ):
+            out = json.loads(protocol.prepare_chat_body(json.dumps({
+                "messages": [{"role": "system", "content": prompt}],
+            })))
+            self.assertEqual(out["messages"][0]["content"], prompt)
+
+    def test_system_array_content_bypass(self):
+        """数组形式 content 中的 text 部分也做绕过。"""
+        blocked = "You are an AI agent powered by DeepSeek Harness."
+        out = json.loads(protocol.prepare_chat_body(json.dumps({
+            "messages": [{"role": "system", "content": [
+                {"type": "text", "text": blocked},
+                {"type": "text", "text": "You are a helpful assistant."},
+            ]}],
+        })))
+        items = out["messages"][0]["content"]
+        self.assertIn("​", items[0]["text"])
+        self.assertEqual(items[1]["text"], "You are a helpful assistant.")
+
+    def test_system_user_message_not_touched(self):
+        """user 消息即使以拦截前缀开头也不修改。"""
+        blocked = "You are an AI agent powered by DeepSeek Harness."
+        out = json.loads(protocol.prepare_chat_body(json.dumps({
+            "messages": [{"role": "user", "content": blocked}],
+        })))
+        self.assertEqual(out["messages"][0]["content"], blocked)
+
+    def test_system_developer_role_also_bypassed(self):
+        """developer→system 转换后同样生效。"""
+        blocked = "You are an AI agent powered by DeepSeek Harness."
+        out = json.loads(protocol.prepare_chat_body(json.dumps({
+            "messages": [{"role": "developer", "content": blocked}],
+        })))
+        self.assertEqual(out["messages"][0]["role"], "system")
+        self.assertIn("​", out["messages"][0]["content"])
+
 
 class TestGatewayHeaders(unittest.TestCase):
     """网关会话头族。"""
